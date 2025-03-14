@@ -114,20 +114,19 @@ def get_current_slot(current_date, timeslots):
             end_time = datetime.datetime.strptime(end_time_str, '%H:%M').time()
             
             if start_time <= current_date.time() <= end_time:
-                return slot_name
+                return slot_name, end_time
             
-    return ""
+    return "", current_date
 
 
 def schedule_tasks_VF(tasks, config):
     time_slots = config['timeSlots']
-    sleep_hours = config['sleepHours']
     commute_time = config['commuteTime']
     planned_duration_days = config['plannedDurationDays']
     deep_work_limit = config['deepWorkLimit']
     free_time_hours = config['freeTimeHours']
 
-    start_date = datetime.datetime.now() + datetime.timedelta(hours=3)
+    start_date = datetime.datetime.now() # + datetime.timedelta(hours=4)
     end_date = start_date + datetime.timedelta(days=planned_duration_days)
     scheduled_tasks = []
 
@@ -142,8 +141,8 @@ def schedule_tasks_VF(tasks, config):
     current_dateTime = start_date
     current_slot = ""
     #while current_dateTime < end_date 
-    current_slot = get_current_slot(current_dateTime, time_slots)
-    print(current_slot)
+    current_slot, end_slot = get_current_slot(current_dateTime, time_slots)
+    print(f"The current slot is '{current_slot}' with end time: '{end_slot}'")
     
     return scheduled_tasks
 

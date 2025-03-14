@@ -1,0 +1,36 @@
+{
+  "timeSlots": {
+    "pro": {
+      "Monday": ["08:30-12:00", "14:00-18:30"],
+      "Tuesday": ["08:30-12:00", "14:00-18:30"],
+      "Wednesday": ["08:30-12:00", "14:00-18:30"],
+      "Thursday": ["08:30-12:00", "14:00-18:30"],
+      "Friday": ["08:30-12:00", "14:00-18:30"],
+      "Saturday": [],
+      "Sunday": []
+    },
+    "projet": {
+      "Monday": ["08:30-12:00", "14:00-18:30"],
+      "Tuesday": ["08:30-12:00", "14:00-18:30"],
+      "Wednesday": ["08:30-12:00", "14:00-18:30"],
+      "Thursday": ["08:30-12:00", "14:00-18:30"],
+      "Friday": ["08:30-12:00", "14:00-18:30"],
+      "Saturday": [],
+      "Sunday": []
+    }
+  },
+  "sleepHours": {
+    "Monday": "22:30-07:30",
+    "Tuesday": "22:30-07:30",
+    "Wednesday": "22:30-07:30",
+    "Thursday": "22:30-07:30",
+    "Friday": "22:30-07:30",
+    "Saturday": "22:30-07:30",
+    "Sunday": "22:30-07:30"
+  },
+  "commuteTime": "10m",
+  "plannedDurationDays": 7,
+  "timezone": "UTC",
+  "deepWorkLimit": 4,
+  "freeTimeHours": 2
+}

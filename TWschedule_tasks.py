@@ -1,10 +1,9 @@
 import json
 import subprocess
 import datetime
-import dateutil.parser
-import dateutil.relativedelta
-import pytz
 import re
+from collections import defaultdict
+from operator import itemgetter
 
 
 def parse_duration(duration_str):
@@ -70,6 +69,12 @@ def get_task_data():
         print(f"Error running TaskWarrior: {e}")
         return []
 
+def sort_tasks_by_urgency(tasks):
+    """ 
+    Sort the tasks by the urgency column in descneding order
+
+    """
+    return sorted(tasks, key=itemgetter('urgency'), reverse=True)
 
 def load_config(config_file):
     """Loads and validates the configuration from a JSON file."""
@@ -96,12 +101,86 @@ def check_tasks_without_est(tasks):
             return False
     return True
 
+def get_current_slot(current_date, timeslots):
+    #Get the current day of the week
+    day_of_week = current_date.strftime('%A') 
+
+    for slot_name, slot_times, in timeslots.items():
+        time_ranges = slot_times.get(day_of_week, [])
+
+        for time_range in time_ranges:
+            start_time_str, end_time_str = time_range.split('-')
+            start_time = datetime.datetime.strptime(start_time_str, '%H:%M').time()
+            end_time = datetime.datetime.strptime(end_time_str, '%H:%M').time()
+            
+            if start_time <= current_date.time() <= end_time:
+                return slot_name
+            
+    return ""
+
+
+def schedule_tasks_VF(tasks, config):
+    time_slots = config['timeSlots']
+    sleep_hours = config['sleepHours']
+    commute_time = config['commuteTime']
+    planned_duration_days = config['plannedDurationDays']
+    deep_work_limit = config['deepWorkLimit']
+    free_time_hours = config['freeTimeHours']
+
+    start_date = datetime.datetime.now() + datetime.timedelta(hours=3)
+    end_date = start_date + datetime.timedelta(days=planned_duration_days)
+    scheduled_tasks = []
+
+    #Ajout des taches deja plannifiees 
+    for task in tasks:
+        if 'scheduled' in task:
+            scheduled_time = datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
+            if scheduled_time > start_date and scheduled_time < end_date:
+                scheduled_tasks.append(task)
+
+    #Planifie les differentes taches
+    current_dateTime = start_date
+    current_slot = ""
+    #while current_dateTime < end_date 
+    current_slot = get_current_slot(current_dateTime, time_slots)
+    print(current_slot)
+    
+    return scheduled_tasks
+
+
+# Display summary of scheduled tasks
+def display_summary(scheduled_tasks):
+    for task in scheduled_tasks:
+        scheduled_time = datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
+        est_time = parse_duration(task['estTime'])
+        end_time = scheduled_time + datetime.timedelta(minutes=est_time)
+        print(f"Task: {task['description']}")
+        print(f"Day: {scheduled_time.strftime('%A')}")
+        print(f"Start Time: {scheduled_time.strftime('%H:%M')}")
+        print(f"End Time: {end_time.strftime('%H:%M')}")
+        print('---')
+
+#Print Function 
+def print_task_table(tasks):
+    """Print the list of task an only shows the columns user_ID, urgency, description"""
+    for task in tasks: 
+        print(f"| {task['id']} |  {task['urgency']} | {task['description']} |")
+    return True
+
 # Main function
 def main():
     config = load_config('config.json')
-    task_output = run_task_command(['task', 'next'])
-    tasks = parse_tasks(task_output)
+    tasks = sort_tasks_by_urgency(get_task_data())
+    
+    #print_task_table(sorted(tasks, key=itemgetter('urgency'), reverse=True))    
+    #print_task_table(tasks)    
 
+    scheduled_tasks = schedule_tasks_VF(tasks, config)
+
+    print("Ceci est le calendrier propose")
+    display_summary(scheduled_tasks)
+    
+    """
     # Check for tasks without estTime
     if not check_tasks_without_est(tasks):
         return
@@ -117,10 +196,11 @@ def main():
 
     scheduled_tasks = schedule_tasks(tasks, config)
     display_summary(scheduled_tasks)
-
+    """
     confirm = input("Do you want to proceed with the scheduling? (yes/no): ")
     if confirm.lower() == 'yes':
-        modify_tasks(scheduled_tasks)
+        #modify_tasks(scheduled_tasks)
+        print("Scheduling code to be written")
     else:
         print("Scheduling aborted.")
 

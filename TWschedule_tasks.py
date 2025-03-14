@@ -110,10 +110,13 @@ def get_current_slot(current_date, timeslots):
 
         for time_range in time_ranges:
             start_time_str, end_time_str = time_range.split('-')
-            start_time = datetime.datetime.strptime(start_time_str, '%H:%M').time()
-            end_time = datetime.datetime.strptime(end_time_str, '%H:%M').time()
+            start_time = datetime.datetime.strptime(start_time_str, '%H:%M')
+            end_time = datetime.datetime.strptime(end_time_str, '%H:%M')
+
+            start_time = current_date.replace(hour=start_time.hour, minute=start_time.minute, second=0, microsecond=0)
+            end_time = current_date.replace(hour=end_time.hour, minute=end_time.minute, second=0, microsecond=0)
             
-            if start_time <= current_date.time() <= end_time:
+            if start_time <= current_date <= end_time:
                 return slot_name, end_time
             
     return "", current_date
@@ -127,6 +130,7 @@ def schedule_tasks_VF(tasks, config):
     free_time_hours = config['freeTimeHours']
 
     start_date = datetime.datetime.now() # + datetime.timedelta(hours=4)
+    start_date = start_date.replace(second=0, microsecond=0)
     end_date = start_date + datetime.timedelta(days=planned_duration_days)
     scheduled_tasks = []
 
@@ -140,17 +144,42 @@ def schedule_tasks_VF(tasks, config):
     #Planifie les differentes taches
     current_dateTime = start_date
     current_slot = ""
-    #while current_dateTime < end_date 
-    current_slot, end_slot = get_current_slot(current_dateTime, time_slots)
-    print(f"The current slot is '{current_slot}' with end time: '{end_slot}'")
+    while current_dateTime < end_date:
+        current_slot, end_slot = get_current_slot(current_dateTime, time_slots)
+        est_time = 60
+        if current_slot == "sleep":
+            current_dateTime = end_slot + datetime.timedelta(minutes=5)
+            continue
+
+        for task in tasks: 
+            #on ignore les les taches deja planifiees ou sans estTime
+            if task in scheduled_tasks: 
+                continue
+            if 'estTime' not in task:
+                continue
+            if current_slot not in task['tags']:
+                continue
+            
+            est_time = parse_duration(task['estTime'])
+            end_time = current_dateTime + datetime.timedelta(minutes=est_time)
+            if end_time > end_slot:
+                continue
+
+            task['scheduled'] = current_dateTime
+            print(f"Task: {task['description']} scheduled at {task['scheduled'].isoformat()} ")
+            scheduled_tasks.append(task)
+            break
+
+        current_dateTime = current_dateTime + datetime.timedelta(minutes=est_time) + datetime.timedelta(minutes=5)
     
+    print("sortie")
     return scheduled_tasks
 
 
 # Display summary of scheduled tasks
 def display_summary(scheduled_tasks):
     for task in scheduled_tasks:
-        scheduled_time = datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
+        scheduled_time = task['scheduled'] #datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
         est_time = parse_duration(task['estTime'])
         end_time = scheduled_time + datetime.timedelta(minutes=est_time)
         print(f"Task: {task['description']}")

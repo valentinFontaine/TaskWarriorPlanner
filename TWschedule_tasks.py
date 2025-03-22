@@ -121,6 +121,15 @@ def get_current_slot(current_date, timeslots):
             
     return "", current_date
 
+def get_next_blocked_time(current_date, end_time, scheduled_tasks): 
+    #get the next start time of a scheduled task
+    next_time = end_time
+    for task in scheduled_tasks:
+        scheduled_time = task['scheduled'] # datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
+        if scheduled_time < next_time:
+            next_time = scheduled_time
+    return next_time
+
 
 def schedule_tasks_VF(tasks, config):
     time_slots = config['timeSlots']
@@ -144,15 +153,16 @@ def schedule_tasks_VF(tasks, config):
     #Planifie les differentes taches
     current_dateTime = start_date
     current_slot = ""
+
     while current_dateTime < end_date:
         current_slot, end_slot = get_current_slot(current_dateTime, time_slots)
-        est_time = 60
-        if current_slot == "sleep":
-            current_dateTime = end_slot + datetime.timedelta(minutes=5)
-            continue
-
+        next_blocked_time = get_next_blocked_time(current_slot, end_date,  scheduled_tasks)
+        
+        #print(f"Current_Time : {current_dateTime.isoformat()} | current_slot: {current_slot} | end_slot: {end_slot.isoformat()} | next_blocket_time: {next_blocked_time.isoformat()}")
+        est_time = 10
         for task in tasks: 
             #on ignore les les taches deja planifiees ou sans estTime
+
             if task in scheduled_tasks: 
                 continue
             if 'estTime' not in task:
@@ -162,7 +172,8 @@ def schedule_tasks_VF(tasks, config):
             
             est_time = parse_duration(task['estTime'])
             end_time = current_dateTime + datetime.timedelta(minutes=est_time)
-            if end_time > end_slot:
+
+            if end_time > end_slot or end_time > next_blocked_time:
                 continue
 
             task['scheduled'] = current_dateTime
@@ -179,7 +190,7 @@ def schedule_tasks_VF(tasks, config):
 # Display summary of scheduled tasks
 def display_summary(scheduled_tasks):
     for task in scheduled_tasks:
-        scheduled_time = task['scheduled'] #datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
+        scheduled_time = task['scheduled'] # datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
         est_time = parse_duration(task['estTime'])
         end_time = scheduled_time + datetime.timedelta(minutes=est_time)
         print(f"Task: {task['description']}")

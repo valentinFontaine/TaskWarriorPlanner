@@ -126,7 +126,7 @@ def get_next_blocked_time(current_date, end_time, scheduled_tasks):
     next_time = end_time
     for task in scheduled_tasks:
         scheduled_time = task['scheduled'] # datetime.datetime.strptime(task['scheduled'], '%Y%m%dT%H%M%SZ')
-        if scheduled_time < next_time:
+        if scheduled_time < next_time and scheduled_time > current_date:
             next_time = scheduled_time
     return next_time
 
@@ -156,13 +156,12 @@ def schedule_tasks_VF(tasks, config):
 
     while current_dateTime < end_date:
         current_slot, end_slot = get_current_slot(current_dateTime, time_slots)
-        next_blocked_time = get_next_blocked_time(current_slot, end_date,  scheduled_tasks)
+        next_blocked_time = get_next_blocked_time(current_dateTime, end_date,  scheduled_tasks)
         
         #print(f"Current_Time : {current_dateTime.isoformat()} | current_slot: {current_slot} | end_slot: {end_slot.isoformat()} | next_blocket_time: {next_blocked_time.isoformat()}")
         est_time = 10
         for task in tasks: 
             #on ignore les les taches deja planifiees ou sans estTime
-
             if task in scheduled_tasks: 
                 continue
             if 'estTime' not in task:
@@ -172,6 +171,7 @@ def schedule_tasks_VF(tasks, config):
             
             est_time = parse_duration(task['estTime'])
             end_time = current_dateTime + datetime.timedelta(minutes=est_time)
+            #print(f"Description : {task['description']} | est_time: {est_time}| end_time: {end_time} | {end_time > end_slot} | {end_time > next_blocked_time} ")
 
             if end_time > end_slot or end_time > next_blocked_time:
                 continue

@@ -1,0 +1,149 @@
+"""Tampon de securite et derivation des echeances effectives — design.md §4.
+
+Regle (design.md §4, proposal.md decision 8) :
+
+    echeance_effective(due) :
+        t = due - 24 h
+        reculer jusqu'a la fin du dernier jour ouvre strictement anterieur a t
+
+Le tampon est applique UNE SEULE FOIS, sur les `due` reelles des taches. Les
+dates derivees le long du graphe de dependances (limite d'une tache sans `due`
+propre, heritee de ses successeurs) ne sont PAS re-tamponnees : sinon le
+tampon se cumulerait le long d'une chaine de taches et une chaine de cinq
+taches accumulerait des jours ouvres de rembourrage invisible.
+
+Un jour ouvre est un jour dont la grille du contexte est non vide
+(`Contexte.est_ouvre`). Aucun calendrier de jours feries n'existe dans le
+depot : les feries sont donc ignores ici, comme deja signale dans
+`planif/modele.py` (`Contexte.est_ouvre`) et dans RAPPORT-NUIT.md. Ce n'est
+pas invente pour ce lot, c'est une limite deja actee du depot.
+"""
+from datetime import datetime, timedelta
+
+__all__ = ["CycleDependances", "echeance_effective", "limites_effectives"]
+
+# Tampon fixe du cahier des charges : 24 heures avant l'echeance reelle.
+TAMPON = timedelta(hours=24)
+
+
+class CycleDependances(Exception):
+    """Levee quand le graphe des successeurs contient un cycle.
+
+    Le diagnostic complet des cycles (chaine complete, etc.) est le travail
+    d'un autre lot : ici on se contente de ne pas boucler a l'infini et de
+    signaler les uuids en cause.
+    """
+
+
+def _vers_local_naif(instant):
+    """Rend un datetime naif en heure locale a partir de `instant`.
+
+    Si `instant` est naif, on le rend tel quel (deja suppose local, comme
+    documente dans l'API de ce module et dans `planif/modele.py`). S'il est
+    aware (`tzinfo` non None), on le convertit vers le fuseau local de la
+    machine puis on retire le `tzinfo` — c'est une interpretation de notre
+    part : le cahier des charges ne precise pas le cas aware, mais aucun
+    autre choix ne fait sens ici (les grilles horaires du contexte sont
+    elles-memes naives et locales).
+    """
+    if instant.tzinfo is not None:
+        instant = instant.astimezone().replace(tzinfo=None)
+    return instant
+
+
+def echeance_effective(due, contexte):
+    """design.md §4 : applique le tampon de securite a une echeance reelle.
+
+    `due` : datetime naif en heure locale (ou aware, auquel cas il est
+    converti en heure locale naive avant calcul, voir `_vers_local_naif`).
+
+    Rend un datetime naif local : la fin du dernier jour ouvre strictement
+    anterieur a `due - 24h`.
+    """
+    due = _vers_local_naif(due)
+    t = due - TAMPON
+
+    jour = t.date() - timedelta(days=1)
+    while not contexte.est_ouvre(jour):
+        jour -= timedelta(days=1)
+
+    fin_min = contexte.fin_de_journee(jour)
+    return datetime(jour.year, jour.month, jour.day) + timedelta(minutes=fin_min)
+
+
+def _contexte_de(tache, contextes):
+    """Rend le `Contexte` d'une tache. Choix : si `tache.contexte` ne
+    correspond a aucune entree de `contextes`, ou est None, on retombe sur le
+    contexte `pro` s'il existe, sinon sur le premier contexte disponible.
+    Ce point n'est pas precise par le cahier des charges pour ce lot (les
+    exemples de test fournissent toujours un contexte explicite) ; c'est une
+    interpretation a signaler.
+    """
+    if tache.contexte in contextes:
+        return contextes[tache.contexte]
+    if "pro" in contextes:
+        return contextes["pro"]
+    return next(iter(contextes.values()))
+
+
+def limites_effectives(taches, contextes):
+    """Rend uuid -> datetime (ou None) : la date de fin au plus tard de chaque tache.
+
+    - Une tache qui porte un `due` reel recoit `echeance_effective(due)`.
+    - Une tache sans `due` herite de la limite de ses successeurs, SANS
+      re-tamponner : limite(i) = min sur les successeurs j de limite(j).
+    - Quand une tache a les deux (un `due` propre ET des successeurs dates),
+      on prend le min des deux.
+    - Une tache sans `due` et sans successeur date recoit None.
+
+    `tache.depends` contient les uuids des PREDECESSEURS de la tache (ce
+    dont elle depend). Le graphe des successeurs est donc l'inverse de
+    `depends` : si B.depends contient A.uuid, alors A precede B, et B est un
+    successeur de A.
+
+    Leve `CycleDependances` si le graphe des successeurs contient un cycle
+    (evite une recursion infinie).
+    """
+    par_uuid = {t.uuid: t for t in taches}
+
+    successeurs = {uuid: [] for uuid in par_uuid}
+    for t in taches:
+        for predecesseur in t.depends:
+            if predecesseur in successeurs:
+                successeurs[predecesseur].append(t.uuid)
+
+    resultats = {}
+    en_cours = set()
+
+    def limite_de(uuid):
+        if uuid in resultats:
+            return resultats[uuid]
+        if uuid in en_cours:
+            raise CycleDependances(
+                "cycle de dependances detecte impliquant : {}".format(uuid)
+            )
+        en_cours.add(uuid)
+
+        tache = par_uuid[uuid]
+        candidats = []
+
+        if tache.due is not None:
+            candidats.append(
+                echeance_effective(tache.due, _contexte_de(tache, contextes))
+            )
+
+        for succ in successeurs[uuid]:
+            limite_succ = limite_de(succ)
+            if limite_succ is not None:
+                candidats.append(limite_succ)
+
+        resultat = min(candidats) if candidats else None
+
+        en_cours.discard(uuid)
+        resultats[uuid] = resultat
+        return resultat
+
+    for uuid in par_uuid:
+        limite_de(uuid)
+
+    return resultats

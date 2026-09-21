@@ -17,8 +17,15 @@ Un jour ouvre est un jour dont la grille du contexte est non vide
 depot : les feries sont donc ignores ici, comme deja signale dans
 `planif/modele.py` (`Contexte.est_ouvre`) et dans RAPPORT-NUIT.md. Ce n'est
 pas invente pour ce lot, c'est une limite deja actee du depot.
+
+Convention sur les `datetime` naifs (design.md §2) : tout naif est suppose
+deja en heure locale. La conversion depuis l'UTC aware de Taskwarrior se
+fait a la frontiere, dans `planif/taskwarrior.py::vers_local_naif`, importee
+telle quelle ici plutot que redefinie.
 """
 from datetime import datetime, timedelta
+
+from planif.taskwarrior import vers_local_naif
 
 __all__ = ["CycleDependances", "echeance_effective", "limites_effectives"]
 
@@ -35,32 +42,16 @@ class CycleDependances(Exception):
     """
 
 
-def _vers_local_naif(instant):
-    """Rend un datetime naif en heure locale a partir de `instant`.
-
-    Si `instant` est naif, on le rend tel quel (deja suppose local, comme
-    documente dans l'API de ce module et dans `planif/modele.py`). S'il est
-    aware (`tzinfo` non None), on le convertit vers le fuseau local de la
-    machine puis on retire le `tzinfo` — c'est une interpretation de notre
-    part : le cahier des charges ne precise pas le cas aware, mais aucun
-    autre choix ne fait sens ici (les grilles horaires du contexte sont
-    elles-memes naives et locales).
-    """
-    if instant.tzinfo is not None:
-        instant = instant.astimezone().replace(tzinfo=None)
-    return instant
-
-
 def echeance_effective(due, contexte):
     """design.md §4 : applique le tampon de securite a une echeance reelle.
 
     `due` : datetime naif en heure locale (ou aware, auquel cas il est
-    converti en heure locale naive avant calcul, voir `_vers_local_naif`).
+    converti en heure locale naive avant calcul, voir `vers_local_naif`).
 
     Rend un datetime naif local : la fin du dernier jour ouvre strictement
     anterieur a `due - 24h`.
     """
-    due = _vers_local_naif(due)
+    due = vers_local_naif(due)
     t = due - TAMPON
 
     jour = t.date() - timedelta(days=1)

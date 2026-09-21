@@ -17,9 +17,16 @@ lot de n'en reutiliser qu'une partie si besoin. `pre_verifications` les
 enchaine dans l'ordre de `CODES`, qui est aussi l'ordre de rendu retenu :
 a code egal, les anomalies sont ensuite triees par leur premier uuid, ce qui
 rend deux appels sur la meme entree strictement identiques (teste).
+
+Convention sur les `datetime` naifs (design.md §2) : tout naif est suppose
+deja en heure locale — pas en UTC. La conversion depuis l'UTC aware de
+Taskwarrior se fait a la frontiere, dans
+`planif/taskwarrior.py::vers_local_naif`, importee telle quelle ici.
 """
 from dataclasses import dataclass
-from datetime import timedelta, timezone
+from datetime import timedelta
+
+from planif.taskwarrior import vers_local_naif
 
 __all__ = ["Anomalie", "CODES", "pre_verifications",
            "verifier_insecables", "verifier_cycles", "verifier_dues",
@@ -182,22 +189,12 @@ def _rendre_comparables(due, maintenant):
     """Rend `due` et `maintenant` comparables meme si l'un est aware et
     l'autre naif.
 
-    Taskwarrior exporte ses dates en UTC (aware). `maintenant` peut etre
-    naif (c'est le cas courant des tests, et potentiellement de certains
-    appelants). Choix retenu, documente ici faute de le trouver ecrit
-    ailleurs : une date naive est consideree comme deja exprimee en UTC. Ce
-    n'est pas une donnee metier (aucun fuseau horaire n'est invente), c'est
-    une convention de comparaison qui evite un `TypeError`.
+    Convention du depot (design.md §2) : un naif est toujours de l'heure
+    locale. On ramene donc les deux via `vers_local_naif`, qui laisse un
+    naif tel quel et convertit un aware vers le local avant de retirer son
+    `tzinfo` — jamais l'inverse (un naif n'est plus suppose etre de l'UTC).
     """
-    due_aware = due.tzinfo is not None
-    maintenant_aware = maintenant.tzinfo is not None
-    if due_aware == maintenant_aware:
-        return due, maintenant
-    if not due_aware:
-        due = due.replace(tzinfo=timezone.utc)
-    if not maintenant_aware:
-        maintenant = maintenant.replace(tzinfo=timezone.utc)
-    return due, maintenant
+    return vers_local_naif(due), vers_local_naif(maintenant)
 
 
 def verifier_dues(taches, maintenant):

@@ -8,6 +8,16 @@ Deux pieges d'AGENTS.md §5 sont traites ici :
 
 Ce module ne pose jamais `TASKRC` lui-meme : c'est a l'appelant de fournir un `env`
 isole. Les tests passent systematiquement une base jetable.
+
+Convention sur les `datetime` (design.md §2, RAPPORT-NUIT.md §1.2 point 8) : tout
+est naif en heure locale A L'INTERIEUR du modele (grilles horaires, tampon,
+verifications). Taskwarrior, lui, exporte ses dates en UTC *aware*
+(`%Y%m%dT%H%M%SZ`). Ce module est la **frontiere** : `_parse_date` convertit une
+fois pour toutes l'UTC aware de Taskwarrior en naif local via `vers_local_naif`,
+et nulle part ailleurs dans le depot on ne suppose qu'un naif est de l'UTC.
+`vers_local_naif` est exposee ici pour que `planif/tampon.py` et
+`planif/verifications.py` l'importent au lieu d'en redupliquer chacun une
+version (ce qui a ete la source de la divergence corrigee par ce lot).
 """
 import json
 import subprocess
@@ -16,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from planif.duree import ParseDureeErreur, parse_duree
 from planif.modele import Tache
 
-__all__ = ["exporter", "charger_taches", "RC_MASSE"]
+__all__ = ["exporter", "charger_taches", "RC_MASSE", "vers_local_naif"]
 
 # AGENTS.md §5 : rc.confirmation=off ne couvre pas la confirmation de lot.
 RC_MASSE = ("rc.confirmation=off", "rc.bulk=0")
@@ -24,10 +34,28 @@ RC_MASSE = ("rc.confirmation=off", "rc.bulk=0")
 _FORMAT_TW = "%Y%m%dT%H%M%SZ"
 
 
+def vers_local_naif(instant):
+    """Convertit `instant` en `datetime` naif en heure locale.
+
+    C'est l'unique fonction de conversion du depot (design.md §2) : un naif
+    est toujours suppose deja local et rendu tel quel ; un aware est converti
+    vers le fuseau local de la machine puis prive de son `tzinfo`. `None`
+    rend `None`. `planif/tampon.py` et `planif/verifications.py` l'importent
+    d'ici plutot que de la redefinir, pour eviter deux conventions
+    contradictoires (l'une supposait un naif local, l'autre un naif UTC).
+    """
+    if instant is None:
+        return None
+    if instant.tzinfo is not None:
+        instant = instant.astimezone().replace(tzinfo=None)
+    return instant
+
+
 def _parse_date(valeur):
     if not valeur:
         return None
-    return datetime.strptime(valeur, _FORMAT_TW).replace(tzinfo=timezone.utc)
+    aware_utc = datetime.strptime(valeur, _FORMAT_TW).replace(tzinfo=timezone.utc)
+    return vers_local_naif(aware_utc)
 
 
 def exporter(filtre=(), env=None):

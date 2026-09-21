@@ -3,7 +3,7 @@
 Les tests qui touchent Taskwarrior utilisent la fixture `base_jetable` : une base
 creee dans le tmp_path du test, jamais celle de l'utilisateur (AGENTS.md §2).
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -120,8 +120,15 @@ def test_champs_metier_traduits(base_jetable):
     assert c.estimated == timedelta(days=28)
     assert c.depends == ("22222222-2222-2222-2222-222222222222",)
 
-    assert d.due == datetime(2026, 11, 24, 16, 0, tzinfo=d.due.tzinfo)
-    assert d.due.utcoffset() == timedelta(0)
+    # Convention du depot (design.md §2) : tout est naif en heure locale a
+    # l'interieur du modele, et la conversion depuis l'UTC de Taskwarrior se
+    # fait a la frontiere, dans planif/taskwarrior.py. On attend donc du naif.
+    # L'attendu est CALCULE depuis le fuseau de la machine, jamais ecrit en
+    # dur : sinon le test ne passerait que sur une machine.
+    attendu = (datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc)
+               .astimezone().replace(tzinfo=None))
+    assert d.due == attendu
+    assert d.due.tzinfo is None
 
 
 def test_exporter_utilise_utf8_explicite(base_jetable):

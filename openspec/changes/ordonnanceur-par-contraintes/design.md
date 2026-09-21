@@ -43,6 +43,16 @@ discussion doit pouvoir implémenter un lot de `tasks.md` en ne lisant que ce fi
 | `+fige` | début imposé : on conserve le `scheduled` courant |
 | `+asap` | exception au « au plus tard » — traité par une échéance artificielle proche |
 
+### Convention sur les `datetime`
+
+À l'intérieur du modèle (grilles horaires, tampon, vérifications), tout `datetime`
+naïf est en **heure locale** — jamais en UTC. Taskwarrior, lui, exporte ses dates en
+UTC *aware*. La conversion se fait **une seule fois, à la frontière** :
+`planif/taskwarrior.py::vers_local_naif`, appelée par `_parse_date` au moment de la
+lecture. Aucun autre endroit du dépôt ne doit reconvertir ni resupposer un fuseau ;
+`planif/tampon.py` et `planif/verifications.py` importent cette même fonction plutôt
+que d'en tenir chacun une version.
+
 ### Contexte
 
 Un contexte Taskwarrior (`context.<nom>.read`) fournit **l'éligibilité** : quelles tâches

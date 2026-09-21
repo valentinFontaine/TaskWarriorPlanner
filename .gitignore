@@ -1,1 +1,8 @@
-config.ini
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# taskrc local : pointe vers une base specifique a la machine
+taskrc
+plan.json

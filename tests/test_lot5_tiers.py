@@ -88,11 +88,18 @@ def test_le_plan_est_resolu(plan_reference):
         assert plan_reference.blocs_de(uuid), "tache non planifiee : " + uuid
 
 
-def test_fin_de_d_est_vendredi_20_novembre_17h(plan_reference):
-    """Attendu du cahier de route : fin de D = vendredi 2026-11-20 a 17:00."""
+def test_fin_de_d_est_mardi_24_novembre_17h(plan_reference):
+    """Fin de D = son echeance meme, mardi 2026-11-24 17:00.
+
+    Le cahier de route disait vendredi 20/11 : c'etait l'echeance moins le
+    tampon de 24 h, puis ramenee au dernier jour ouvre. La passe 1 ne
+    tamponne plus (sa sortie est une limite, pas une intention), donc D finit
+    a l'heure ou il est reellement trop tard. Les quatre jours calendaires
+    d'ecart (dont un week-end) se retrouvent sur toute la chaine en amont.
+    """
     fin = plan_reference.fin(UUID_D)
-    assert fin == datetime(2026, 11, 20, 17, 0)
-    assert fin.weekday() == 4
+    assert fin == datetime(2026, 11, 24, 17, 0)
+    assert fin.weekday() == 1                   # mardi
 
 
 def test_c_dure_exactement_28_jours_calendaires(plan_reference):
@@ -107,28 +114,34 @@ def test_c_finit_exactement_quand_d_commence(plan_reference):
     assert plan_reference.fin(UUID_C) == plan_reference.debut(UUID_D)
 
 
-def test_b_est_le_vendredi_23_octobre_avant_14h(plan_reference):
-    """Attendu du cahier de route : B le vendredi 2026-10-23, avant 14:00."""
+def test_b_est_le_mardi_27_octobre_avant_14h(plan_reference):
+    """B le mardi 2026-10-27, avant 14:00.
+
+    Derivation : D commence le 24/11 a 14:00, C dure 28 jours CALENDAIRES et
+    finit quand D commence, donc C demarre le 27/10 a 14:00 et B doit etre
+    fini a cet instant. Au plus tard avant 14:00, c'est la fin de la matinee.
+    """
     debut = plan_reference.debut(UUID_B)
     fin = plan_reference.fin(UUID_B)
-    assert debut.date() == date(2026, 10, 23)
-    assert debut.weekday() == 4                     # vendredi
-    assert fin <= datetime(2026, 10, 23, 14, 0)
+    assert debut.date() == date(2026, 10, 27)
+    assert debut.weekday() == 1                     # mardi
+    assert fin <= datetime(2026, 10, 27, 14, 0)
     # B fait 30 min et tient en un seul bloc, plus court que le bloc minimum
     assert len(plan_reference.blocs_de(UUID_B)) == 1
     assert fin - debut == timedelta(minutes=30)
 
 
-def test_a_est_reparti_sur_les_22_et_23_octobre(plan_reference):
-    """Attendu du cahier de route : A reparti sur les 22 et 23 octobre.
+def test_a_est_reparti_sur_les_26_et_27_octobre(plan_reference):
+    """A reparti sur les lundi 26 et mardi 27 octobre.
 
     A fait 4 h, le bloc minimum est 2 h : deux blocs. Ils ne tiennent pas tous
-    les deux dans la matinee du 23 avant B, donc le premier recule au 22.
+    les deux dans la matinee du 27 avant B, donc le premier recule au 26.
+    Memes quatre jours de decalage que le reste de la chaine.
     """
     blocs = plan_reference.blocs_de(UUID_A)
     assert len(blocs) == 2
     jours = sorted({instant_creneau(T0, b.debut, GRANULARITE).date() for b in blocs})
-    assert jours == [date(2026, 10, 22), date(2026, 10, 23)]
+    assert jours == [date(2026, 10, 26), date(2026, 10, 27)]
     # conservation de la duree : 4 h au total
     total = sum(b.fin - b.debut for b in blocs) * GRANULARITE
     assert total == timedelta(hours=4)

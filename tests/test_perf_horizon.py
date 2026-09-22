@@ -217,7 +217,7 @@ def test_le_cas_de_reference_reste_optimal(plan_reference_detaille):
     plan = plan_reference_detaille
     assert plan.statut == "OPTIMAL"
     assert plan.retard_total == 0
-    assert plan.fin(UUID_D) == datetime(2026, 11, 20, 17, 0)
+    assert plan.fin(UUID_D) == datetime(2026, 11, 24, 17, 0)
 
 
 # --------------------------------------------------------------------------
@@ -244,7 +244,7 @@ def test_l_agregation_garde_le_bon_JOUR_pour_d(plan_reference_agrege):
     """
     plan = plan_reference_agrege
     assert plan.statut != "INFEASIBLE"
-    assert plan.fin(UUID_D).date() == datetime(2026, 11, 20).date()
+    assert plan.fin(UUID_D).date() == datetime(2026, 11, 24).date()
 
 
 def test_l_agregation_respecte_encore_le_delai_fournisseur(plan_reference_agrege):

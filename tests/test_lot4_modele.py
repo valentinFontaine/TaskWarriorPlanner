@@ -74,9 +74,11 @@ def test_tache_datee_est_placee_a_sa_limite_et_pas_avant():
 
     assert plan.statut in ("OPTIMAL", "FEASIBLE")
     assert plan.retard_total == 0
-    # Valeur donnee par le prompt du run, verifiee aussi dans le rapport via
-    # planif.tampon.echeance_effective : vendredi 2026-11-20 a 17:00.
-    assert plan.fin(uuid) == datetime(2026, 11, 20, 17, 0)
+    # Depuis que la passe 1 n'applique plus de tampon, la limite EST l'echeance :
+    # mardi 2026-11-24 17:00, fin de la derniere demi-heure ouvrable de ce jour.
+    # L'ancienne valeur (vendredi 20/11) etait l'echeance reculee de 24 h puis
+    # ramenee au dernier jour ouvre -- un coussin, pas une limite.
+    assert plan.fin(uuid) == datetime(2026, 11, 24, 17, 0)
 
 
 def test_deux_taches_ne_se_chevauchent_jamais():

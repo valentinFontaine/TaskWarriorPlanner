@@ -42,24 +42,35 @@ class CycleDependances(Exception):
     """
 
 
-def echeance_effective(due, contexte):
+def echeance_effective(due, contexte, tampon=TAMPON):
     """design.md §4 : applique le tampon de securite a une echeance reelle.
 
     `due` : datetime naif en heure locale (ou aware, auquel cas il est
     converti en heure locale naive avant calcul, voir `vers_local_naif`).
 
-    Rend un datetime naif local : la fin du dernier jour ouvre strictement
-    anterieur a `due - 24h`.
+    Avec tampon (comportement historique, decision 8) : rend la fin du dernier
+    jour ouvre strictement anterieur a `due - tampon`.
+
+    Avec `tampon=timedelta(0)` : rend la date VRAIE, simplement ramenee au
+    dernier instant ouvrable qui ne la depasse pas. C'est le regime de la passe
+    1 depuis que l'utilisateur a tranche : une `due` calculee doit dire quand il
+    est reellement trop tard, pas quand on aimerait avoir fini. Un coussin
+    melange a une limite donne une limite fausse, et personne ne peut plus dire
+    de combien.
     """
     due = vers_local_naif(due)
-    t = due - TAMPON
 
-    jour = t.date() - timedelta(days=1)
+    if tampon:
+        jour = (due - tampon).date() - timedelta(days=1)
+    else:
+        jour = due.date()
+
     while not contexte.est_ouvre(jour):
         jour -= timedelta(days=1)
 
     fin_min = contexte.fin_de_journee(jour)
-    return datetime(jour.year, jour.month, jour.day) + timedelta(minutes=fin_min)
+    fin = datetime(jour.year, jour.month, jour.day) + timedelta(minutes=fin_min)
+    return fin if tampon else min(due, fin)
 
 
 def _contexte_de(tache, contextes):
@@ -77,7 +88,7 @@ def _contexte_de(tache, contextes):
     return next(iter(contextes.values()))
 
 
-def limites_effectives(taches, contextes):
+def limites_effectives(taches, contextes, tampon=TAMPON):
     """Rend uuid -> datetime (ou None) : la date de fin au plus tard de chaque tache.
 
     - Une tache qui porte un `due` reel recoit `echeance_effective(due)`.
@@ -120,7 +131,8 @@ def limites_effectives(taches, contextes):
 
         if tache.due is not None:
             candidats.append(
-                echeance_effective(tache.due, _contexte_de(tache, contextes))
+                echeance_effective(tache.due, _contexte_de(tache, contextes),
+                                   tampon)
             )
 
         for succ in successeurs[uuid]:

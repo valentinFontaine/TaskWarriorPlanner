@@ -456,7 +456,10 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
                  if agregation else horizon)
 
     if limites is None:
-        limites = limites_effectives(taches, contextes)
+        # Passe 1 sans tampon : sa sortie est une LIMITE (« apres, c'est trop
+        # tard »), pas une intention. Le coussin, si on en veut un, se pose sur
+        # le placement de la passe 2, pas sur la date qu'on annonce.
+        limites = limites_effectives(taches, contextes, tampon=timedelta(0))
 
     par_uuid = {t.uuid: t for t in taches}
     modele = cp_model.CpModel()

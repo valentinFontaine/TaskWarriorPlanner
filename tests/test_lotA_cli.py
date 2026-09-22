@@ -189,3 +189,50 @@ def test_deux_executions_sans_changement_n_ecrivent_pas_deux_fois(base_jetable, 
 
     assert mtime1 == mtime2, "le mtime ne doit pas bouger sur une seconde " \
                              "execution sans changement d'entree"
+
+
+# ---------------------------------------------------------------------------
+# Lisibilite du rapport : constate en lancant la CLI sur la base de dev
+# ---------------------------------------------------------------------------
+#
+# Le premier essai reel a rendu un rapport inutilisable : 114 puis 148 noms de
+# taches deverses sur UNE ligne chacun. Le bloc est cense etre la premiere
+# chose que l'utilisateur lit chaque jour ; un mur de texte n'est pas un
+# rapport, c'est un `cat` du probleme.
+#
+# On garde le compte exact -- c'est lui qui informe -- et on ne cite que les
+# premieres taches, en disant combien restent.
+
+def test_le_rapport_ne_deverse_pas_des_centaines_de_noms():
+    from planif.__main__ import formater_pre_verifications
+    from planif.verifications import Anomalie
+
+    noms = ["Tache numero {}".format(i) for i in range(40)]
+    message = "Durée estimée absente : {}.".format(
+        ", ".join("« {} »".format(n) for n in noms))
+    anomalie = Anomalie("sans-estimated", message,
+                        tuple("uuid-{}".format(i) for i in range(40)))
+
+    texte = formater_pre_verifications([anomalie])
+
+    # Le compte reste exact : c'est l'information, et elle n'est pas tronquee.
+    assert "40 tache(s)" in texte
+    # Mais la quarantieme n'est pas citee, et le texte dit combien restent.
+    assert "Tache numero 39" not in texte
+    assert "autres" in texte
+    # Et le bloc tient a l'ecran.
+    assert len(texte.splitlines()) <= 12, texte
+
+
+def test_une_anomalie_courte_reste_citee_en_entier():
+    """Tronquer ce qui tient a l'ecran serait une perte seche."""
+    from planif.__main__ import formater_pre_verifications
+    from planif.verifications import Anomalie
+
+    anomalie = Anomalie("due-depassee",
+                        "Échéance déjà dépassée pour : « Tester le backend ».",
+                        ("uuid-1",))
+
+    texte = formater_pre_verifications([anomalie])
+    assert "Tester le backend" in texte
+    assert "autres" not in texte

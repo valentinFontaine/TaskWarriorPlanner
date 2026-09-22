@@ -109,6 +109,34 @@ def _fmt_duree_creneaux(nb_creneaux, granularite):
     return " ".join(morceaux)
 
 
+#: Nombre de taches citees nommement par anomalie. Au-dela, on donne le compte
+#: et on s'arrete. Constate en lancant la CLI pour de vrai : sur la base de dev,
+#: le rapport deversait 114 puis 148 noms sur une seule ligne chacun. Ce bloc
+#: est la premiere chose lue chaque jour ; un mur de texte n'est pas un rapport.
+#: Le COMPTE, lui, n'est jamais tronque -- c'est lui qui informe.
+TACHES_CITEES = 6
+
+
+def _abreger(message, nb_taches):
+    """Ne garde que les premieres taches citees par un message d'anomalie.
+
+    Les messages de `planif/verifications.py` ont tous la meme forme :
+    une phrase, « : » ou « — », puis la liste des taches entre guillemets
+    francais, separees par des virgules. On coupe dans cette liste plutot que
+    de reformuler, pour que le texte reste celui du module qui sait de quoi il
+    parle.
+    """
+    if nb_taches <= TACHES_CITEES:
+        return message
+
+    morceaux = message.rstrip(".").split("« ")
+    if len(morceaux) <= TACHES_CITEES + 1:
+        return message      # forme inattendue : on rend le message tel quel
+
+    debut = "« ".join(morceaux[:TACHES_CITEES + 1]).rstrip(", ")
+    return "{}… et {} autres.".format(debut, nb_taches - TACHES_CITEES)
+
+
 def formater_pre_verifications(anomalies):
     """Le bloc de rapport, en tete de sortie (BRIEF-LOT-A.md §4)."""
     lignes = ["=== Pre-verifications ==="]
@@ -128,7 +156,7 @@ def formater_pre_verifications(anomalies):
         nb_taches = sum(len(a.uuids) for a in anomalies_code)
         lignes.append("[{}] {} tache(s)".format(code, nb_taches))
         for anomalie in anomalies_code:
-            lignes.append("  " + anomalie.message)
+            lignes.append("  " + _abreger(anomalie.message, len(anomalie.uuids)))
     lignes.append("")
     return "\n".join(lignes)
 

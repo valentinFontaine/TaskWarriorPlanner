@@ -9,3 +9,6 @@ plan.json
 
 # Echeances de projet : donnee personnelle, pas du code. Voir echeances.exemple.json.
 echeances.json
+
+# Agenda extrait d'Outlook : sujets et lieux reels. Voir outils/extraire-outlook.ps1.
+reunions.json

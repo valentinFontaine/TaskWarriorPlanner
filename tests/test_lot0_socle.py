@@ -181,6 +181,6 @@ def test_echeances_de_projet_sont_un_bouchon():
         datetime(2026, 11, 24, 17, 0)
 
 
-def test_reunions_sont_un_bouchon_vide():
-    from planif import stub_reunions
-    assert stub_reunions.reunions(datetime(2026, 10, 5), datetime(2026, 12, 1)) == ()
+# `test_reunions_sont_un_bouchon_vide` a ete retire le 22/09/2026 : le bouchon
+# n'existe plus. Les reunions se lisent pour de bon (`planif/reunions.py`), et
+# leur contrat est verifie par `tests/test_reunions_outlook.py`.

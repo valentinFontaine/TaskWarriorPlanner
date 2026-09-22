@@ -34,7 +34,7 @@ from planif.calendrier import indice_creneau
 from planif.selection import capacite_restante, selectionner_candidates
 from planif.solveur import completer, resoudre
 from planif.sortie import ecrire_json, ecrire_scheduled
-from planif.stub_reunions import reunions as charger_reunions
+from planif.reunions import reunions as charger_reunions
 from planif.tampon import limites_effectives
 from planif.taskwarrior import charger_taches
 from planif.verifications import CODES, pre_verifications

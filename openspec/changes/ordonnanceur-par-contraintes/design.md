@@ -231,6 +231,81 @@ que le noyau se retraduise en langage courant :
 
 Le plan JSON est le contrat avec l'interface web. Elle ne connaît pas le solveur.
 
+### Le format JSON — contrat avec `../WebTaskManager`
+
+Produit par `planif/sortie.py`. L'interface web lit **ce fichier et rien d'autre** :
+elle ne connaît ni `ortools`, ni les grilles, ni `t0`, ni la notion de créneau.
+
+```json
+{
+  "version": 1,
+  "statut": "OPTIMAL",
+  "retard_total": 0,
+  "en_retard": [],
+  "t0": "2026-10-05T00:00:00",
+  "granularite_minutes": 30,
+  "taches": {
+    "dddddddd-…-0004": {
+      "description": "Tester",
+      "projet": "NPD.helisides",
+      "debut": "2026-11-20T14:00:00",
+      "fin": "2026-11-20T17:00:00",
+      "blocs": [
+        {"indice": 0, "debut": "2026-11-20T14:00:00", "fin": "2026-11-20T16:00:00",
+         "externe": false, "agrege": false, "opportuniste": false, "precision": "heure"},
+        {"indice": 1, "debut": "2026-11-20T16:00:00", "fin": "2026-11-20T17:00:00",
+         "externe": false, "agrege": false, "opportuniste": false, "precision": "heure"}
+      ]
+    }
+  }
+}
+```
+
+Les règles, dans l'ordre d'importance :
+
+1. **`precision` gouverne l'affichage.** `"heure"` : le créneau est un engagement.
+   `"jour"` : le bloc vient du régime agrégé (au-delà de l'horizon détaillé, §1) et
+   **seule la journée est garantie** — deux blocs agrégés d'une même journée peuvent
+   même se chevaucher dans cette sortie. L'interface ne doit pas les afficher comme
+   des rendez-vous à l'heure près. `precision` est redondante avec `agrege`, et c'est
+   voulu : le drapeau dit *d'où vient* le bloc, la précision dit *ce qu'on peut en
+   faire*, et c'est la seconde qui intéresse un afficheur.
+2. **Les trois régimes sont lus, jamais déduits.** Chaque bloc porte `externe`,
+   `agrege` et `opportuniste`. Un consommateur ne recalcule rien. `opportuniste`
+   distingue le travail de la passe 2 (§5) de celui de la passe 1 : les deux
+   **doivent être visuellement distincts** (`proposal.md` décision 9).
+3. **Aucun indice de créneau ne sort.** Les instants sont des chaînes ISO-8601 en
+   **heure locale naïve**, conformément à la convention du §2. `t0` et
+   `granularite_minutes` ne sont là que pour le diagnostic.
+4. **`statut`, `retard_total` et `en_retard` remontent un plan dégradé.** `statut`
+   vaut `OPTIMAL`, `FEASIBLE` ou `INFEASIBLE` ; `FEASIBLE` signifie « plan valide,
+   optimalité non prouvée ». `en_retard` liste les tâches dont l'échéance n'est pas
+   tenue — l'échéance est une contrainte *souple*, une tâche intenable ne bloque pas
+   les autres.
+5. **Le fichier est stable octet pour octet** pour une même entrée (`sort_keys`,
+   indentation fixe), et l'écriture est **idempotente** : si le contenu n'a pas
+   changé, le fichier n'est pas rouvert en écriture et son `mtime` ne bouge pas.
+6. **`version` est un entier**, à incrémenter dès que le format change de façon
+   incompatible, pour que l'interface puisse refuser ce qu'elle ne sait pas lire
+   plutôt que de l'interpréter de travers.
+
+### L'écriture de `scheduled:` dans Taskwarrior
+
+`scheduled` reçoit le **début du premier bloc** de la tâche. Deux règles :
+
+- les tâches **`+externe` sont ignorées** — un délai fournisseur n'est pas du travail
+  de l'utilisateur et n'a pas à apparaître dans son agenda ;
+- l'écriture est **idempotente** : on relit l'état courant et on ne réécrit que ce qui
+  diffère. Sans ça, chaque exécution toucherait toute la base et Syncthing
+  répliquerait le bruit sur trois machines.
+
+`planif/sortie.py` est la **frontière en écriture** des dates, symétrique de
+`planif/taskwarrior.py` en lecture : il reconvertit le local naïf du §2 vers l'UTC
+compact `%Y%m%dT%H%M%SZ`. Vérifié sur base jetable (Taskwarrior 3.5.0) : les deux
+formes `2026-11-20T14:00:00` et `20261120T130000Z` sont acceptées et ressortent
+identiques ; on retient l'UTC explicite, qui ne dépend pas de la façon dont
+Taskwarrior interprète une date sans fuseau.
+
 ---
 
 ## 8. Interfaces

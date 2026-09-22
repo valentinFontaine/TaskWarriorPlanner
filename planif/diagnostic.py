@@ -53,7 +53,20 @@ from planif.verifications import verifier_insecables
 
 __all__ = ["Element", "Diagnostic", "diagnostiquer"]
 
-SECONDES_MAX = 30.0
+# Meme correction, meme raison que dans `planif/solveur.py` : le critere d'arret
+# est un budget de TRAVAIL, pas une horloge. Ici l'enjeu n'est pas le plan mais
+# le noyau d'infaisabilite — la liste des contraintes accusees. Arrete par
+# l'horloge, ce module peut designer un noyau different d'une execution a
+# l'autre, donc accuser une autre tache. Un diagnostic qui change d'avis selon
+# la charge de la machine ne sert a rien.
+#
+# Le budget est plus court que celui du solveur (30 unites la-bas) : chercher un
+# noyau est un travail borne, et l'attente se paie au moment ou l'utilisateur
+# est deja en train de comprendre un echec.
+TEMPS_DETERMINISTE_MAX = 10.0
+
+#: Filet, pas critere. Voir `planif.solveur.SECONDES_MAX`.
+SECONDES_MAX = 120.0
 
 
 @dataclass(frozen=True)
@@ -292,6 +305,7 @@ def diagnostiquer(taches, contextes, t0, maintenant, horizon_fin, granularite,
         modele.AddAssumption(lit)
 
     solveur = cp_model.CpSolver()
+    solveur.parameters.max_deterministic_time = TEMPS_DETERMINISTE_MAX
     solveur.parameters.max_time_in_seconds = SECONDES_MAX
     solveur.parameters.num_search_workers = 1
     solveur.parameters.random_seed = 0

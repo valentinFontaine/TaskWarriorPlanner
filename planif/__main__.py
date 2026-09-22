@@ -224,6 +224,16 @@ def formater_resume(plan, taches, temps_passe1, temps_passe2,
     lignes.append("Blocs regime opportuniste     : {}".format(n_opportuniste))
     lignes.append("Passe 1 (travail date) : {} — {} tache(s) placee(s)".format(
         plan.statut, len({b.uuid for b in plan.blocs} - uuids_opportunistes)))
+    if plan.statut == "FEASIBLE":
+        # `FEASIBLE` est un code CP-SAT, pas une phrase. Depuis que le critere
+        # d'arret est un budget de TRAVAIL et non une horloge (voir
+        # `planif.solveur.TEMPS_DETERMINISTE_MAX`), il a une traduction stable,
+        # et rassurante : la recherche a depense son budget sans prouver
+        # qu'elle ne pouvait pas mieux faire. Le plan est valide, et il sera le
+        # meme a la prochaine execution.
+        lignes.append("  FEASIBLE : budget de calcul epuise sans preuve "
+                      "d'optimalite. Le plan est valide et reproductible, "
+                      "simplement pas demontre le meilleur.")
     if candidates_passe2 is not None:
         ligne = "Passe 2 (opportuniste) : {} tache(s) placee(s) sur {} soumise(s)".format(
             len(uuids_opportunistes), candidates_passe2)

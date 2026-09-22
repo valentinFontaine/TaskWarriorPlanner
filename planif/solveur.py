@@ -88,9 +88,82 @@ __all__ = ["Bloc", "Plan", "resoudre", "completer", "decouper_en_blocs"]
 # commande) de decider ou vont les messages. Il se contente de les emettre.
 _LOG = logging.getLogger(__name__)
 
-# Duree maximale laissee au solveur. Au-dela on rend ce qu'on a trouve, plutot
-# que de bloquer : le plan doit sortir.
-SECONDES_MAX = 60.0
+# Budget laisse au solveur, en unites de TRAVAIL et non en secondes d'horloge.
+#
+# C'est une correction, et elle merite ses chiffres. Le critere d'arret etait
+# `max_time_in_seconds = 60`, et il rendait le plan dependant de la charge de la
+# machine : memes donnees, meme code, 26 s / OPTIMAL sur une execution et
+# 94 s / FEASIBLE sur la suivante. L'instrumentation des deux `Solve` sur les
+# donnees reelles (278 taches, 54 datees) a montre ou etait la bascule :
+#
+#     temps DETERMINISTE : 5,460 puis 12,978  -- identique a la milliseconde
+#     branches explorees : 136 568 / 277 628  -- identique
+#     temps MUR          : 21,82 s / 20,17 s  -- lui, non
+#
+# La recherche est donc parfaitement deterministe ; seul son critere d'arret ne
+# l'etait pas. `num_search_workers = 1` et `random_seed = 0` figent le CHEMIN,
+# pas le moment ou l'on cesse de le parcourir — la promesse de reproductibilite
+# ecrite en face d'eux etait fausse tant que l'horloge decidait de la fin.
+#
+# Et ce que l'arret premature coutait n'est pas ce qu'on croit :
+#
+#     budget mur | statut   | objectif | empreinte du plan
+#        300 s   | OPTIMAL  |   1949   | -4562147786156008567
+#         60 s   | OPTIMAL  |   1949   | -4562147786156008567
+#         20 s   | FEASIBLE |   1949   |  5071140208841883476
+#         12 s   | FEASIBLE |   1949   |  5071140208841883476
+#
+# L'objectif ne bouge pas : le plan rendu plus tot est aussi BON. Il est
+# seulement AUTRE — l'optimum n'est pas unique. Le degat n'etait pas un plan
+# degrade, c'etait un plan qui se deplace sans raison d'une execution a l'autre.
+#
+# 30 unites, pour 13 consommees au pire sur les donnees reelles : de la marge
+# pour une base qui grossit, sans laisser une instance pathologique tourner
+# indefiniment.
+TEMPS_DETERMINISTE_MAX = 30.0
+
+#: Filet de securite, en secondes d'horloge. **Ce n'est pas le critere d'arret**
+#: — c'est la garantie qu'une instance pathologique finit par rendre la main.
+#: Il est place tres au-dessus de ce que le budget de travail peut consommer
+#: (22 s d'horloge mesurees pour 13 unites, machine au repos), de sorte qu'il ne
+#: morde jamais en usage normal. Et s'il mord quand meme, `_signaler_arret_horloge`
+#: le dit : a cet instant precis, et a cet instant seulement, le plan rendu cesse
+#: d'etre reproductible.
+SECONDES_MAX = 300.0
+
+
+def _solveur():
+    """Le solveur, configure identiquement pour les deux passes.
+
+    Trois reglages, un seul but : que deux executions de la meme instance
+    rendent le meme plan. La graine et le worker unique figent le chemin de
+    recherche ; le budget deterministe fige le point d'arret. Il faut les trois,
+    et c'est le troisieme qui manquait.
+    """
+    s = cp_model.CpSolver()
+    s.parameters.max_deterministic_time = TEMPS_DETERMINISTE_MAX
+    s.parameters.max_time_in_seconds = SECONDES_MAX
+    s.parameters.num_search_workers = 1
+    s.parameters.random_seed = 0
+    return s
+
+
+def _signaler_arret_horloge(s, etat, etape):
+    """Dit tout haut quand c'est l'HORLOGE qui a arrete la recherche.
+
+    Le mode de panne caracteristique de ce projet est de perdre du contenu en
+    silence. Qu'un plan soit arrete par le filet est tolerable ; qu'il soit
+    presente comme un plan normal ne l'est pas, parce qu'une autre execution en
+    rendrait un autre.
+    """
+    if etat in (cp_model.OPTIMAL, cp_model.INFEASIBLE):
+        return
+    if s.ResponseProto().deterministic_time >= TEMPS_DETERMINISTE_MAX * 0.99:
+        return   # arret sur le budget de travail : reproductible, donc normal
+    _LOG.warning(
+        "%s : recherche arretee par le filet d'horloge (%.0f s) avant son "
+        "budget de travail -- CE PLAN N'EST PAS REPRODUCTIBLE, une machine "
+        "moins chargee en rendrait un autre", etape, SECONDES_MAX)
 
 
 @dataclass(frozen=True)
@@ -469,14 +542,6 @@ def resoudre(taches, contextes, t0, maintenant, horizon_fin, granularite,
         retards.append(retard)
         ordre_retard.append((uuid, retard))
 
-    def _solveur():
-        s = cp_model.CpSolver()
-        s.parameters.max_time_in_seconds = SECONDES_MAX
-        # Un seul worker et une graine fixe : le plan doit etre reproductible.
-        s.parameters.num_search_workers = 1
-        s.parameters.random_seed = 0
-        return s
-
     # === Objectif, en DEUX resolutions et non deux objectifs (design.md §5) ===
     # CP-SAT n'optimise pas lexicographiquement. On minimise d'abord le retard,
     # on fige l'optimum trouve, puis on maximise la somme des debuts.
@@ -484,6 +549,7 @@ def resoudre(taches, contextes, t0, maintenant, horizon_fin, granularite,
         modele.Minimize(sum(retards))
         s1 = _solveur()
         etat1 = s1.Solve(modele)
+        _signaler_arret_horloge(s1, etat1, "passe 1 (minimisation du retard)")
         if etat1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             return Plan(blocs=(), t0=t0, granularite=granularite,
                         statut="INFEASIBLE", retard_total=0, en_retard=())
@@ -495,6 +561,7 @@ def resoudre(taches, contextes, t0, maintenant, horizon_fin, granularite,
     modele.Maximize(sum(termes_objectif) if termes_objectif else 0)
     s2 = _solveur()
     etat = s2.Solve(modele)
+    _signaler_arret_horloge(s2, etat, "passe 1 (au plus tard)")
     if etat not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return Plan(blocs=(), t0=t0, granularite=granularite,
                     statut="INFEASIBLE", retard_total=0, en_retard=())
@@ -702,13 +769,6 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
             elif predecesseur in fins_passe1:
                 modele.Add(debuts[tache.uuid] >= fins_passe1[predecesseur])
 
-    def _solveur():
-        s = cp_model.CpSolver()
-        s.parameters.max_time_in_seconds = SECONDES_MAX
-        s.parameters.num_search_workers = 1
-        s.parameters.random_seed = 0
-        return s
-
     if not presences:
         _LOG.info("passe 2 : aucune candidate soumise, le plan ressort intact")
         return plan   # rien a faire : le plan de la passe 1 ressort intact
@@ -725,6 +785,7 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     modele.Maximize(sum(poids) if poids else 0)
     s1 = _solveur()
     etat1 = s1.Solve(modele)
+    _signaler_arret_horloge(s1, etat1, "passe 2 (maximisation de l'urgence)")
     if etat1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         # Ne devrait pas arriver : les candidates sont des intervalles
         # OPTIONNELS, donc « ne rien placer » est toujours une solution. Si on
@@ -745,6 +806,7 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     modele.Minimize(sum(tous_les_debuts) if tous_les_debuts else 0)
     s2 = _solveur()
     etat = s2.Solve(modele)
+    _signaler_arret_horloge(s2, etat, "passe 2 (au plus tot)")
     if etat not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         _LOG.warning(
             "passe 2 : pas de solution au second objectif (%s), 0 tache placee "

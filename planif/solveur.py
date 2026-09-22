@@ -449,7 +449,22 @@ def resoudre(taches, contextes, t0, maintenant, horizon_fin, granularite,
         if uuid not in fins or limite is None:
             continue
         borne = indice_creneau(t0, limite, granularite)
-        retard = modele.NewIntVar(0, horizon, "retard_" + uuid[:8])
+        # Le plafond est `horizon - borne`, et non `horizon`. Quand la limite
+        # est ANTERIEURE a t0 -- une echeance deja depassee -- `borne` est
+        # negative, et le retard reellement necessaire vaut `fin + |borne|`.
+        # Avec un plafond a `horizon`, le domaine ne peut pas porter cette
+        # valeur des que la tache est en retard de plus que la longueur de
+        # l'horizon, et CP-SAT declare le modele INFAISABLE.
+        #
+        # L'echeance souple redevenait donc dure, en silence, et UNE seule
+        # vieille tache annulait la planification de toutes les autres --
+        # constate sur les donnees reelles : 278 taches, INFEASIBLE en 0,04 s,
+        # une dichotomie a designe « aller chercher veste Christina pressing »,
+        # due depuis 134 jours pour un horizon de 90. C'est exactement ce que
+        # le lot 4 exigeait d'eviter : « une echeance intenable est signalee
+        # sans empecher les autres d'etre planifiees ».
+        plafond = max(0, horizon - borne)
+        retard = modele.NewIntVar(0, plafond, "retard_" + uuid[:8])
         modele.AddMaxEquality(retard, [fins[uuid] - borne, 0])
         retards.append(retard)
         ordre_retard.append((uuid, retard))

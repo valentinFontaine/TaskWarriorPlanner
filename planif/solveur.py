@@ -117,10 +117,61 @@ _LOG = logging.getLogger(__name__)
 # seulement AUTRE — l'optimum n'est pas unique. Le degat n'etait pas un plan
 # degrade, c'etait un plan qui se deplace sans raison d'une execution a l'autre.
 #
-# 30 unites, pour 13 consommees au pire sur les donnees reelles : de la marge
-# pour une base qui grossit, sans laisser une instance pathologique tourner
-# indefiniment.
-TEMPS_DETERMINISTE_MAX = 30.0
+# La VALEUR, elle, vient d'un second balayage, sur deux instances reelles. On y
+# lit l'empreinte du plan en fonction du budget -- autrement dit : a partir de
+# quand le plan cesse-t-il de changer ?
+#
+#     budget |   instance facile (09:00)   |    instance dure (17:00)
+#            |  mur  | blocs |  empreinte  |  mur  | blocs |  empreinte
+#        2   |  7,3s |  21   |  8dc276e2   |  8,5s |   0   |   VIDE
+#        3   |  9,5s |  21   |  8dc276e2   | 11,6s |   0   |   VIDE
+#        5   | 15,1s |  21   |  8dc276e2   | 17,4s |  21   |  a1b6830c
+#       13   | 26,4s |  21   |  8dc276e2   | 41,2s |  21   |  a1b6830c
+#       30   | 26,0s |  21   |  8dc276e2   | 75,7s |  21   |  a1b6830c
+#
+# Sur ces deux instances, le plan est FIGE des 2 unites (facile) ou 5 (dure), et
+# ne bouge plus jusqu'a 30 -- a objectif rigoureusement egal, donc sans rien
+# perdre. Ces 25 unites de plus coutent **58 secondes** sur l'instance dure et
+# n'achetent meme pas la preuve : la borne descend de 3456 a 3254 sans jamais
+# rejoindre l'objectif 2578.
+#
+# **Mais ca ne se generalise pas, et c'est mesure.** Sur le banc synthetique de
+# 100 taches datees de `tests/test_perf_horizon.py` -- deux fois la charge datee
+# reelle -- l'objectif continue de progresser au-dela de 13 :
+#
+#     budget | mur    | objectif « au plus tard » | empreinte
+#        5   |  29 s  |        154 936            | 6ae0ca8e
+#       13   |  64 s  |        154 936            | 6ae0ca8e
+#       30   | 122 s  |        155 032            | d8b21563
+#
+# Le budget 5 y rend donc un optimum STRICTEMENT inferieur. De 0,062 %, soit
+# 96 creneaux cumules sur 100 taches -- une demi-heure par tache placee plus tot
+# que necessaire. Et aucune echeance n'est manquee dans aucun des trois cas : la
+# premiere resolution rend un retard NUL aux trois budgets. Ce qui se degrade
+# est la marge, pas le respect des dates.
+#
+# A noter, parce que ca change la lecture : la borne reste a 158 524 aux trois
+# budgets. AUCUN d'eux ne prouve son optimum. Le plan a 30 n'est pas « la bonne
+# reponse » face a une degradation, c'est un point un peu meilleur sur une
+# asymptote, non prouve lui aussi.
+#
+# Reste que la falaise, elle, est brutale : sous 2 (facile) ou 5 (dure), ce
+# n'est pas un plan moins bon, c'est **zero bloc**. Et elle se DEPLACE avec la
+# difficulte de l'instance. Aucune valeur fixe n'est a la fois rapide et sure :
+# d'ou une valeur de depart basse, et l'escalade juste dessous.
+#
+# Le choix assume : 5 par defaut. Sur les donnees reelles de l'utilisateur
+# (54 taches datees, 13 placees) il est prouve sans perte ; sur le banc a
+# 100 taches il coute 0,06 % de marge pour 4x moins d'attente. Si la base grossit
+# jusqu'a ressembler au banc, c'est cette valeur qu'il faudra remonter.
+TEMPS_DETERMINISTE_MAX = 5.0
+
+#: De combien on remonte le budget quand le plan ressort VIDE, et seulement dans
+#: ce cas : jamais pour ameliorer un plan, qui ne s'ameliore plus (voir le
+#: tableau ci-dessus). 5, puis 15, puis 45 unites. Le cas courant paie la
+#: premiere ligne ; le cas degrade paie la somme, ce qui reste infiniment
+#: preferable au plan vide qu'il rendait avant.
+FACTEURS_ESCALADE = (1, 3, 9)
 
 #: Filet de securite, en secondes d'horloge. **Ce n'est pas le critere d'arret**
 #: — c'est la garantie qu'une instance pathologique finit par rendre la main.
@@ -132,7 +183,7 @@ TEMPS_DETERMINISTE_MAX = 30.0
 SECONDES_MAX = 300.0
 
 
-def _solveur():
+def _solveur(budget=None):
     """Le solveur, configure identiquement pour les deux passes.
 
     Trois reglages, un seul but : que deux executions de la meme instance
@@ -141,7 +192,8 @@ def _solveur():
     et c'est le troisieme qui manquait.
     """
     s = cp_model.CpSolver()
-    s.parameters.max_deterministic_time = TEMPS_DETERMINISTE_MAX
+    s.parameters.max_deterministic_time = (
+        TEMPS_DETERMINISTE_MAX if budget is None else budget)
     s.parameters.max_time_in_seconds = SECONDES_MAX
     s.parameters.num_search_workers = 1
     s.parameters.random_seed = 0
@@ -158,12 +210,44 @@ def _signaler_arret_horloge(s, etat, etape):
     """
     if etat in (cp_model.OPTIMAL, cp_model.INFEASIBLE):
         return
-    if s.ResponseProto().deterministic_time >= TEMPS_DETERMINISTE_MAX * 0.99:
+    if s.ResponseProto().deterministic_time >= (
+            s.parameters.max_deterministic_time * 0.99):
         return   # arret sur le budget de travail : reproductible, donc normal
     _LOG.warning(
         "%s : recherche arretee par le filet d'horloge (%.0f s) avant son "
         "budget de travail -- CE PLAN N'EST PAS REPRODUCTIBLE, une machine "
         "moins chargee en rendrait un autre", etape, SECONDES_MAX)
+
+
+def _sans_solution(s, etat, etape, t0, granularite):
+    """Le Plan vide a rendre quand une resolution n'a rien trouve -- et le mot juste.
+
+    Ces deux verdicts n'appellent pas du tout la meme reaction, et on les
+    confondait en rendant `INFEASIBLE` dans les deux cas :
+
+    - `INFEASIBLE` : les contraintes se contredisent, aucun plan n'existe. On
+      cherche la tache coupable, on lance `planif/diagnostic.py`.
+    - `UNKNOWN` : le budget s'est epuise avant qu'on ait trouve quoi que ce
+      soit. Il n'y a rien a diagnostiquer, il faut du budget.
+
+    Annoncer le premier quand c'est le second envoie l'utilisateur chercher un
+    probleme qui n'existe pas. Constate en balayant le budget sur les donnees
+    reelles : sous 2 unites, la passe 1 rendait un plan VIDE etiquete
+    INFEASIBLE, et sans un mot -- l'arret etant bien tombe sur le budget de
+    travail, `_signaler_arret_horloge` se taisait a juste titre.
+    """
+    if etat == cp_model.INFEASIBLE:
+        _LOG.warning("%s : modele INFAISABLE, les contraintes se contredisent. "
+                     "Le diagnostic (planif/diagnostic.py) nomme les "
+                     "responsables.", etape)
+    else:
+        _LOG.warning(
+            "%s : budget de calcul epuise sans AUCUNE solution (%s). Le plan "
+            "ressort VIDE. Ce n'est pas une infaisabilite : il n'y a rien a "
+            "diagnostiquer, il faut augmenter le budget.",
+            etape, s.StatusName(etat))
+    return Plan(blocs=(), t0=t0, granularite=granularite,
+                statut=s.StatusName(etat), retard_total=0, en_retard=())
 
 
 @dataclass(frozen=True)
@@ -298,6 +382,57 @@ def _horizons(contexte, t0, horizon_fin, granularite, reunions, frontiere):
 
 def resoudre(taches, contextes, t0, maintenant, horizon_fin, granularite,
              reunions=(), limites=None, horizon_detaille_fin=None):
+    """Passe 1 : le budget est essaye, puis augmente TANT QUE le plan est vide.
+
+    Voir `_resoudre_une_fois` pour le modele lui-meme. Ici, une seule question :
+    combien de travail donner au solveur.
+
+    Le balayage du budget sur les donnees reelles a rendu deux verdicts
+    contradictoires — empreinte du plan en fonction du budget :
+
+        instance facile (09:00) : plan final des  2 unites, VIDE en dessous
+        instance dure   (17:00) : plan final des  5 unites, VIDE en dessous
+
+    « Plan final » au sens fort : l'empreinte ne bouge plus d'un iota jusqu'a
+    30 unites, alors que ces 25 unites supplementaires coutent **58 secondes**
+    sur l'instance dure — et n'achetent meme pas la preuve d'optimalite, la
+    borne descendant de 3456 a 3254 sans jamais rejoindre l'objectif 2578.
+
+    Mais sous la falaise, ce n'est pas un plan degrade : c'est **zero bloc**. Et
+    la falaise se deplace avec la difficulte de l'instance. Aucune valeur fixe
+    n'est donc a la fois rapide et sure : trop haute, on paie une minute pour
+    rien ; trop basse, on n'a plus de plan du tout.
+
+    D'ou l'escalade. On ne remonte le budget que sur le seul symptome qui
+    compte, le plan vide — jamais sur la qualite, qui ne s'ameliore plus. Chaque
+    tentative etant deterministe, le resultat final l'est aussi.
+
+    Un plan vide mais `OPTIMAL` (aucune tache a placer) est une reponse juste et
+    ne declenche rien.
+    """
+    budget = TEMPS_DETERMINISTE_MAX
+    for rang in range(len(FACTEURS_ESCALADE)):
+        budget = TEMPS_DETERMINISTE_MAX * FACTEURS_ESCALADE[rang]
+        plan = _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin,
+                                  granularite, reunions=reunions, limites=limites,
+                                  horizon_detaille_fin=horizon_detaille_fin,
+                                  budget=budget)
+        if plan.statut in ("OPTIMAL", "FEASIBLE", "INFEASIBLE"):
+            return plan
+        if rang + 1 < len(FACTEURS_ESCALADE):
+            _LOG.warning(
+                "passe 1 : aucune solution avec un budget de %.3g ; nouvelle "
+                "tentative a %.3g.", budget,
+                TEMPS_DETERMINISTE_MAX * FACTEURS_ESCALADE[rang + 1])
+    _LOG.warning(
+        "passe 1 : toujours aucune solution apres un budget de %.3g. Le plan "
+        "ressort VIDE.", budget)
+    return plan
+
+
+def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granularite,
+                       reunions=(), limites=None, horizon_detaille_fin=None,
+                       budget=None):
     """Passe 1 du design.md §5 : les taches datees, placees au plus tard en securite.
 
     `limites` : dict uuid -> datetime de fin au plus tard. Si None, il est calcule
@@ -547,24 +682,23 @@ def resoudre(taches, contextes, t0, maintenant, horizon_fin, granularite,
     # on fige l'optimum trouve, puis on maximise la somme des debuts.
     if retards:
         modele.Minimize(sum(retards))
-        s1 = _solveur()
+        s1 = _solveur(budget)
         etat1 = s1.Solve(modele)
         _signaler_arret_horloge(s1, etat1, "passe 1 (minimisation du retard)")
         if etat1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return Plan(blocs=(), t0=t0, granularite=granularite,
-                        statut="INFEASIBLE", retard_total=0, en_retard=())
+            return _sans_solution(s1, etat1, "passe 1 (minimisation du retard)",
+                                  t0, granularite)
         retard_optimal = int(s1.ObjectiveValue())
         modele.Add(sum(retards) <= retard_optimal)
 
     # « au plus tard en securite » (decision 7) : on pousse chaque intervalle
     # aussi loin que les contraintes le permettent. La date planifiee EST la marge.
     modele.Maximize(sum(termes_objectif) if termes_objectif else 0)
-    s2 = _solveur()
+    s2 = _solveur(budget)
     etat = s2.Solve(modele)
     _signaler_arret_horloge(s2, etat, "passe 1 (au plus tard)")
     if etat not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return Plan(blocs=(), t0=t0, granularite=granularite,
-                    statut="INFEASIBLE", retard_total=0, en_retard=())
+        return _sans_solution(s2, etat, "passe 1 (au plus tard)", t0, granularite)
 
     blocs = []
     for uuid, liste in blocs_modele.items():

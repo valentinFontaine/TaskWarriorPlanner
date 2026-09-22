@@ -179,11 +179,13 @@ def test_le_diagnostic_s_arrete_lui_aussi_sur_un_budget_de_travail(
 def test_le_filet_d_horloge_est_beaucoup_plus_large_que_le_budget_de_travail():
     """Un filet qui mord en usage normal n'est pas un filet, c'est un critere.
 
-    Le budget de travail vaut 30 unites ; les donnees reelles en consomment au
-    plus 13, pour 22 s d'horloge sur une machine au repos. Le filet doit rester
-    hors de portee de ces valeurs, charge comprise.
+    La comparaison doit porter sur le budget MAXIMAL, celui du dernier palier
+    d'escalade, et non sur le budget de depart : c'est lui qui peut approcher le
+    filet. 45 unites valent environ 76 s d'horloge sur une machine au repos
+    (mesure sur l'instance dure), le filet est a 300 s.
     """
-    assert solveur.SECONDES_MAX >= 10 * solveur.TEMPS_DETERMINISTE_MAX
+    budget_max = solveur.TEMPS_DETERMINISTE_MAX * max(solveur.FACTEURS_ESCALADE)
+    assert solveur.SECONDES_MAX >= 3 * budget_max
 
 
 def test_quand_le_filet_mord_on_le_dit(monkeypatch, caplog):
@@ -203,6 +205,100 @@ def test_quand_le_filet_mord_on_le_dit(monkeypatch, caplog):
         "la recherche a ete arretee par l'horloge et le plan rendu ne le dit "
         "pas : il est presente comme un plan normal alors qu'une autre "
         "execution en rendrait un autre. Messages vus : {}".format(messages))
+
+
+def test_un_budget_epuise_sans_solution_ne_se_fait_pas_passer_pour_infaisable(
+        monkeypatch, caplog):
+    """Defaut trouve en balayant le budget, pas en relisant le code.
+
+    Sous 2 unites de budget, sur les donnees reelles, le second `Solve` de la
+    passe 1 rend `UNKNOWN` et `resoudre` rendait un plan vide etiquete
+    **INFEASIBLE**. C'est faux, et c'est la pire des deux erreurs possibles :
+
+    - `INFEASIBLE` veut dire « tes contraintes se contredisent, aucun plan
+      n'existe » — on va chercher la tache coupable, on lance le diagnostic ;
+    - `UNKNOWN` veut dire « je n'ai pas eu le temps » — on augmente le budget.
+
+    Le premier envoie l'utilisateur chercher un probleme qui n'existe pas. Et
+    rien ne le signalait : l'arret etant bien tombe sur le budget de travail,
+    `_signaler_arret_horloge` se taisait, a juste titre. Un plan vide sortait
+    donc sans un mot.
+    """
+    monkeypatch.setattr(solveur, "TEMPS_DETERMINISTE_MAX", 0.002)
+
+    with caplog.at_level(logging.WARNING, logger="planif.solveur"):
+        plan = resoudre(_instance_lourde(60), CONTEXTES, T0, MAINTENANT,
+                        HORIZON_FIN, GRANULARITE)
+
+    if plan.blocs:
+        pytest.skip("budget trop genereux sur cette machine : le solveur a "
+                    "trouve une solution, le cas vise n'est pas atteint")
+
+    assert plan.statut != "INFEASIBLE", (
+        "un plan vide faute de budget est annonce INFEASIBLE : l'utilisateur "
+        "va chercher une contradiction dans ses taches alors qu'il lui suffit "
+        "d'augmenter le budget")
+    messages = [e.message for e in caplog.records]
+    assert any("budget" in m.lower() for m in messages), (
+        "plan vide rendu sans un mot. Messages vus : {}".format(messages))
+
+
+def test_le_budget_monte_seulement_si_le_plan_ressort_vide(monkeypatch, caplog):
+    """Le budget n'est pas devine : il est essaye, puis augmente si besoin.
+
+    Le balayage sur les donnees reelles a montre deux choses contradictoires :
+
+        instance facile (09:00) : plan final des 2 unites, falaise a 2
+        instance dure   (17:00) : plan final des 5 unites, falaise a 5
+
+    « Plan final » au sens fort : l'empreinte ne bouge plus jusqu'a 30, alors
+    que le budget coute 58 s de plus. Mais sous la falaise, ce n'est pas un plan
+    degrade, c'est ZERO bloc — et la falaise se deplace avec la difficulte de
+    l'instance. Aucun nombre fixe n'est donc a la fois rapide et sur.
+
+    D'ou l'escalade : on part petit, et on ne remonte que si le plan est vide.
+    Chaque tentative restant deterministe, le resultat final l'est aussi.
+    """
+    appels = []
+    original = solveur._resoudre_une_fois
+
+    def espion(*a, **kw):
+        appels.append(kw.get("budget", a[-1] if a else None))
+        return original(*a, **kw)
+
+    monkeypatch.setattr(solveur, "_resoudre_une_fois", espion)
+    monkeypatch.setattr(solveur, "TEMPS_DETERMINISTE_MAX", 0.002)
+
+    with caplog.at_level(logging.WARNING, logger="planif.solveur"):
+        resoudre(_instance_lourde(60), CONTEXTES, T0, MAINTENANT, HORIZON_FIN,
+                 GRANULARITE)
+
+    assert len(appels) > 1, (
+        "budget derisoire, plan vide, et aucune nouvelle tentative : "
+        "l'utilisateur se retrouve sans plan alors qu'il suffisait d'insister")
+    assert appels == sorted(appels), "le budget doit monter, pas descendre"
+    assert any("budget" in e.message.lower() for e in caplog.records), (
+        "l'escalade se fait en silence")
+
+
+def test_un_plan_qui_tient_ne_declenche_aucune_escalade(monkeypatch):
+    """L'escalade ne doit pas se declencher sur un plan vide LEGITIME.
+
+    Zero tache a placer donne zero bloc, et c'est une reponse correcte, rendue
+    `OPTIMAL`. Reessayer trois fois avec un budget triple serait absurde.
+    """
+    appels = []
+    original = solveur._resoudre_une_fois
+
+    def espion(*a, **kw):
+        appels.append(1)
+        return original(*a, **kw)
+
+    monkeypatch.setattr(solveur, "_resoudre_une_fois", espion)
+    resoudre([], CONTEXTES, T0, MAINTENANT, HORIZON_FIN, GRANULARITE)
+
+    assert len(appels) == 1, (
+        "un plan vide mais OPTIMAL a relance le solveur pour rien")
 
 
 def test_le_resume_explique_ce_que_feasible_veut_dire():

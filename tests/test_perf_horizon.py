@@ -99,9 +99,32 @@ def _avec_due_sur_d(taches):
 # La mesure
 # --------------------------------------------------------------------------
 
+#: Budget de travail auquel la cible est mesuree, et pourquoi il est FIGE ici.
+#:
+#: Ce test mesurait le defaut avec le budget par defaut du solveur. Le jour ou
+#: celui-ci est passe de 30 a 5 unites, la mesure est tombee de 60,8 s a 26,1 s
+#: et le test a annonce la cible atteinte -- alors que le modele n'avait pas
+#: progresse d'un pouce. Pire : a budget 5, l'objectif rendu vaut 154 936 contre
+#: 155 032 a budget 30, soit un plan strictement inferieur.
+#:
+#: Une cible de performance mesuree a budget variable ne mesure donc pas ce
+#: qu'elle croit : on l'atteint en donnant moins de travail au solveur, ce qui
+#: est precisement le geste que ce fichier s'interdit. Le budget est fige pour
+#: que le chiffre reste comparable d'un mois a l'autre, et que la cible ne
+#: puisse etre atteinte que par une vraie amelioration du modele.
+BUDGET_DE_REFERENCE = 30.0
+
+
 @pytest.fixture(scope="module")
-def mesure_100_taches():
+def mesure_100_taches(request):
     """Resout le banc de 100 taches et rend (plan, secondes)."""
+    from planif import solveur
+
+    ancien = solveur.TEMPS_DETERMINISTE_MAX
+    solveur.TEMPS_DETERMINISTE_MAX = BUDGET_DE_REFERENCE
+    request.addfinalizer(
+        lambda: setattr(solveur, "TEMPS_DETERMINISTE_MAX", ancien))
+
     taches = banc_de_taches()
     depart = time.perf_counter()
     plan = resoudre(taches, CONTEXTES, T0, MAINTENANT, HORIZON_FIN, GRANULARITE,
@@ -111,7 +134,20 @@ def mesure_100_taches():
 
 @pytest.mark.xfail(
     strict=True,
-    reason="CIBLE NON ATTEINTE : mesure 60,8 s pour une cible de 30 s. Ce n'est "
+    reason="CIBLE TOUJOURS NON ATTEINTE, et la mesure a 26,1 s ne compte PAS. "
+           "Le budget du solveur est passe de 30 a 5 unites de travail, ce qui "
+           "amene ce banc a 26,1 s -- sous la cible de 30 s. Mais la mesure de "
+           "l'objectif dit que ce gain n'est pas gratuit ICI : 154 936 a "
+           "budget 5 et 13, contre 155 032 a budget 30, pour une meme borne "
+           "158 524 jamais atteinte. Le plan rendu est donc strictement "
+           "inferieur, de 0,062 % -- 96 creneaux sur 100 taches, une demi-heure "
+           "par tache placee plus tot que necessaire. Le retard, lui, reste NUL "
+           "aux trois budgets : c'est la marge qui se degrade, pas le respect "
+           "des dates. Passer sous la cible en abaissant le budget est "
+           "exactement le geste que ce test interdit, donc le xfail reste. Il "
+           "redeviendra rouge le jour ou la cible sera atteinte a objectif "
+           "constant. Mesure d'origine, pour memoire : 60,8 s a budget 30, la "
+           "passe 2 consommant tout sans jamais prouver son optimum. Ce n'est "
            "pas la construction du modele qui coute, c'est la PREUVE "
            "d'optimalite de la passe 2. Diagnostic chiffre : passe 1 "
            "(minimiser le retard) 0,7 s OPTIMAL ; passe 2 (maximiser la somme "

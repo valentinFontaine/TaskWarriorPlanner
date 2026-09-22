@@ -9,7 +9,7 @@ Il ne remplace pas `openspec/changes/ordonnanceur-par-contraintes/tasks.md`, qui
 décrit les lots 0 à 8 tels qu'ils ont été spécifiés au départ. Il recense ce qui
 est apparu **depuis**, ou ce que ces lots ont laissé ouvert.
 
-Dernière mise à jour : 2026-09-22.
+Dernière mise à jour : 2026-09-22, après le run de nuit.
 
 ---
 
@@ -17,7 +17,12 @@ Dernière mise à jour : 2026-09-22.
 
 Rien à trancher ici : la décision est prise, il reste à l'écrire en code.
 
-### A1. Propagation d'une échéance aux sous-projets
+> **A1, A2 et A3 sont faits** (run de nuit du 22/09/2026, commits `3919ac8`,
+> `d43da05`, `68c2d09`). Leurs sections sont conservées telles quelles : elles
+> portent les mesures et les raisons, qui restent utiles. Ce qui reste ouvert
+> est **A5**, plus le lot Outlook dont la partie affichage n'est pas tranchée.
+
+### ~~A1.~~ FAIT — Propagation d'une échéance aux sous-projets
 
 Aujourd'hui `planif/echeances.py` compare les noms de projet à l'identique. Une
 échéance sur `NPD.Heliside.US` ne touche donc pas `NPD.Heliside.US.plans`, alors
@@ -43,7 +48,7 @@ C'est ce point qui rendra opérantes les deux dates de `echeances.json`, et qui
 donnera une échéance aux **149 tâches** de `NPD.Heliside.US` et
 `NPD.Heliside.MRIS` qui n'en ont aucune aujourd'hui.
 
-### A2. Écriture de `due` et `duePlanif` dans Taskwarrior
+### ~~A2.~~ FAIT — Écriture de `due` et `duePlanif` dans Taskwarrior
 
 `planif/dues.py` calcule les dates ; rien ne les écrit. L'écriture va derrière un
 drapeau de ligne de commande, sur le modèle de `--ecrire-scheduled`.
@@ -55,11 +60,14 @@ boucle `due → urgency → placement → due` converge.
 
 L'UDA à déclarer dans le `taskrc` : `uda.duePlanif.type=date`.
 
-### A3. Précocité et ordre dans la passe 2
+### ~~A3.~~ FAIT — Précocité et ordre dans la passe 2
 
-Découvert le 2026-09-22, et c'est le trou le plus sérieux du dépôt : **la passe 2
-n'optimise pas la précocité.** Son objectif choisit *quelles* tâches sont
-placées, jamais *où* dans l'horizon. Mesuré : la tâche la plus urgente du jeu de
+**Le diagnostic initial était faux, et la correction vaut d'être lue.** On avait
+écrit « la passe 2 n'optimise pas la précocité ». La lecture du code montre le
+contraire : elle maximise `Σ urgence × présence`, puis, à urgence figée,
+minimise `Σ débuts`. Ce qui manquait n'était pas l'objectif mais sa
+**pondération** — une somme de débuts non pondérée est indifférente à qui passe
+devant. Mesuré : la tâche la plus urgente du jeu de
 test est passée du 05/10 au 12/10 alors que les créneaux du 05 au 09 sont libres
 dans les deux cas — rien ne l'y forçait.
 
@@ -137,6 +145,19 @@ pas la construction du modèle. Trois directions, et le choix t'appartient :
 
 Jamais tranché. Signalé dans `RAPPORT-NUIT-2.md` et jamais remonté depuis.
 
+**Mesure du 22/09/2026, qui pèse sur cet arbitrage.** La suppression du tampon
+de la passe 1 (B3, décision du 22/09) coûte du temps de résolution sur ce banc.
+Mesuré dans un même processus, même machine, budget figé à 30 :
+
+    sans tampon (HEAD)            139,6 s   FEASIBLE
+    avec tampon (avant a882452)   111,2 s   FEASIBLE
+
+**+28 s, soit +26 %.** C'est le prix d'une `due` qui dit la vérité, et il est
+assumé. En revanche, aucun écart mesuré dans deux exécutions différentes ne doit
+être invoqué ici : le budget déterministe fige le TRAVAIL, pas le temps mural,
+qui dépend de la charge de la machine. Les 60,8 s citées par
+`RAPPORT-NUIT-2.md` viennent d'un autre run et ne se comparent pas à celles-ci.
+
 ### B5. La grille du cas de référence n'est pas ta vraie grille
 
 Les tests imposent `09:00-12:00` / `14:00-17:00`, soit 6 h. Ton `config.json`
@@ -164,13 +185,31 @@ sur un projet dont les tâches n'ont pas de durée ne produit rien.
 
 ## C. Hors de cette machine
 
-### C1. Réunions et acquisition Outlook (lot D)
+### C1. Réunions Outlook — la lecture est faite, l'affichage non
 
-**`planif/stub_reunions.py` rend toujours une liste vide.** Le flux est
-bouchonné, et c'est déclaré bloquant pour la production : tant qu'il n'est pas
-branché, le plan ignore purement et simplement tes réunions.
+**Fait** (commit `ade923f`) : `outils/extraire-outlook.ps1` extrait l'agenda en
+lecture seule, `planif/reunions.py` filtre et alimente le solveur. Le plan ne
+ignore plus les réunions. Deux choses mesurées sur l'export réel ont corrigé la
+conception : l'`entryId` appartient à la **série** et non à l'occurrence (18
+occurrences, 6 identifiants), et **6 événements sur 18 sont `Free`**, donc la
+présence d'un événement ne vaut pas occupation.
 
-Conception arrêtée, rien d'implémenté :
+**Reste ouvert : où les réunions s'affichent.** Calendar-planner lit
+`task scheduled.not: export`, donc il ne voit que Taskwarrior. Trois formes
+possibles, discutées le 22/09 :
+
+1. calendar-planner reste, CalDAV s'ajoute — coût nul, c'est l'existant ;
+2. calendar-planner devient un éditeur CalDAV — **à éviter** : on relit ses
+   propres écritures, le piège que la séparation Outlook/CalDAV évitait ;
+3. calendar-planner est abandonné, CalDAV affiche tout — le moins cher en
+   maintenance, mais on perd le kanban et l'édition rapide.
+
+Avis donné : **1 maintenant, 3 comme horizon, jamais 2.**
+
+L'ancienne conception « une réunion = une tâche Taskwarrior `+meeting` » n'est
+plus nécessaire pour le calcul. Si elle revient, ce sera pour l'affichage ou
+pour pouvoir poser un `depends` sur une réunion — et l'idempotence devra alors
+se faire sur `entryId + date de début`, jamais sur `entryId` seul :
 
 - une réunion est une tâche Taskwarrior `+meeting`, avec `scheduled` et
   `estTime`, ce qui implique le marqueur `+fige` existant ;

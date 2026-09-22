@@ -180,6 +180,12 @@ FACTEURS_ESCALADE = (1, 3, 9)
 #: morde jamais en usage normal. Et s'il mord quand meme, `_signaler_arret_horloge`
 #: le dit : a cet instant precis, et a cet instant seulement, le plan rendu cesse
 #: d'etre reproductible.
+#: Mise a l'echelle de l'urgence dans le second objectif de la passe 2. CP-SAT
+#: ne manipule que des entiers ; le plancher garantit qu'une tache d'urgence
+#: nulle est quand meme tiree vers le tot.
+ECHELLE_URGENCE = 100
+POIDS_PLANCHER = 100
+
 SECONDES_MAX = 300.0
 
 
@@ -803,7 +809,18 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     blocs_modele = {}
     presences = {}
     debuts, fins = {}, {}
-    tous_les_debuts = []
+    # Debuts PONDERES PAR L'URGENCE. Une somme de debuts non ponderee est
+    # indifferente a QUI passe devant : avancer n'importe quelle tache de cinq
+    # jours y vaut exactement autant qu'avancer la plus urgente. Mesure sur le
+    # jeu du lot 6 avant correction -- l'ordre etait presque exactement inverse :
+    #
+    #     urgence 20,00 -> 12/10     (la plus urgente, placee en DERNIER)
+    #     urgence  9,00 -> 05/10
+    #     urgence  6,00 -> 07/10
+    #     urgence  5,50 -> 08/10
+    #
+    # C'est le « par urgence decroissante » du lot 6, jamais ecrit jusqu'ici.
+    debuts_ponderes = []
 
     for tache in taches:
         if tache.estimated is None or tache.uuid in deja_planifiees:
@@ -871,7 +888,11 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
             blocs_modele[tache.uuid].append((indice, depart, arrivee, t_bloc))
             starts_tache.append(depart)
             ends_tache.append(arrivee)
-            tous_les_debuts.append(depart)
+            # Plancher : une urgence nulle doit quand meme pousser vers le tot,
+            # sinon la tache devient libre de se poser n'importe ou.
+            poids_urgence = POIDS_PLANCHER + int(round(
+                max(0.0, tache.urgency) * ECHELLE_URGENCE))
+            debuts_ponderes.append((poids_urgence, depart))
 
         if starts_tache:
             d_t = modele.NewIntVar(tot, horizon, "dt_o_" + tache.uuid[:8])
@@ -940,7 +961,8 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     # « au plus tot » : c'est l'inverse exact de la passe 1, et c'est voulu.
     # Le travail sans echeance se fait des qu'il y a de la place ; le travail
     # date se fait contre son mur.
-    modele.Minimize(sum(tous_les_debuts) if tous_les_debuts else 0)
+    modele.Minimize(sum(poids * depart for poids, depart in debuts_ponderes)
+                    if debuts_ponderes else 0)
     s2 = _solveur()
     etat = s2.Solve(modele)
     _signaler_arret_horloge(s2, etat, "passe 2 (au plus tot)")

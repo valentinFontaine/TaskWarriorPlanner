@@ -212,18 +212,6 @@ def test_l_urgence_ordonne_le_choix(plan_urgence):
     assert blocs_faible == (), "la tache la moins urgente a ete placee malgre l'oversupply"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "EXIGENCE NON IMPLEMENTEE, decouverte le 22/09/2026. La passe 2 n'optimise "
-    "PAS la precocite : son objectif choisit QUELLES taches sont placees, jamais "
-    "OU dans l'horizon. Ce test passait par accident du chemin de recherche. "
-    "Retirer le tampon de la passe 1 a deplace les taches datees de 4 jours -- "
-    "sans jamais occuper la premiere semaine, verifie -- et l'accident a cesse : "
-    "PRECOCE est passee du 05/10 09:00 au 12/10 09:00 alors que les creneaux du "
-    "05 au 09 sont LIBRES dans les deux cas. Rien n'a ete degrade ; il n'y avait "
-    "rien qui tenait. C'est le meme trou que « par urgence decroissante » du lot "
-    "6, toujours ouvert : l'ordre a l'interieur de la passe 2 n'est contraint par "
-    "rien. Ce xfail strict redeviendra rouge le jour ou la precocite entrera "
-    "dans l'objectif."))
 def test_les_opportunistes_sont_placees_au_plus_tot(plan_complete):
     """La passe 2 doit placer au plus tot : la tache la plus urgente du jeu de
     test commence dans les cinq premiers jours ouvres de l'horizon.
@@ -259,3 +247,32 @@ def test_les_precedences_sont_tenues_aussi_en_passe_2(plan_complete):
         assert fin_f <= debut_g
     else:
         pytest.fail("F et/ou G n'ont pas ete placees : la precedence n'a pas pu etre controlee")
+
+
+def test_l_ordre_des_debuts_suit_l_urgence_decroissante(plan_complete):
+    """Le contrat du lot 6 -- « par urgence decroissante » -- enfin verifie.
+
+    Il n'avait jamais ete ecrit, et rien ne le tenait : le second objectif de la
+    passe 2 minimisait une somme de debuts NON PONDEREE, donc indifferente a qui
+    passait devant. Avancer n'importe quelle tache de cinq jours y valait autant
+    qu'avancer la plus urgente. Mesure avant correction, ordre presque exactement
+    inverse :
+
+        urgence 20,00 -> 12/10     urgence 6,00 -> 07/10
+        urgence  9,00 -> 05/10     urgence 5,50 -> 08/10
+
+    Apres ponderation du second objectif par l'urgence :
+
+        urgence 20,00 -> 05/10 09:00     urgence 6,00 -> 12/10 14:00
+        urgence  9,00 -> 05/10 10:00     urgence 5,50 -> 13/10 09:00
+    """
+    placees = [(t.urgency, plan_complete.debut(t.uuid))
+               for t in taches_mecanisme() if plan_complete.debut(t.uuid)]
+    assert len(placees) >= 2, "pas assez de taches placees pour parler d'ordre"
+
+    par_urgence = sorted(placees, key=lambda c: -c[0])
+    for (urg_forte, debut_fort), (urg_faible, debut_faible) in zip(
+            par_urgence, par_urgence[1:]):
+        assert debut_fort <= debut_faible, (
+            "urgence {} commence le {}, apres l'urgence {} du {}".format(
+                urg_forte, debut_fort, urg_faible, debut_faible))

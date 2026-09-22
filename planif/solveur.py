@@ -81,7 +81,7 @@ from ortools.sat.python import cp_model
 from planif.calendrier import disponibilite, indice_creneau, instant_creneau
 from planif.tampon import limites_effectives
 
-__all__ = ["Bloc", "Plan", "resoudre", "decouper_en_blocs"]
+__all__ = ["Bloc", "Plan", "resoudre", "completer", "decouper_en_blocs"]
 
 # Duree maximale laissee au solveur. Au-dela on rend ce qu'on a trouve, plutot
 # que de bloquer : le plan doit sortir.
@@ -499,4 +499,233 @@ def resoudre(taches, contextes, t0, maintenant, horizon_fin, granularite,
         statut=s2.StatusName(etat),
         retard_total=retard_total,
         en_retard=en_retard,
+    )
+
+
+def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
+              reunions=(), horizon_detaille_fin=None):
+    """Passe 2, le regime opportuniste — design.md §5, lot 6.
+
+        « Le plan de la passe 1 est **fige**. Les taches non datees remplissent
+        la capacite restante, par urgence decroissante, au plus tot. »
+
+    `plan`   : le Plan rendu par la passe 1. Il est FIGE — et figé veut dire
+               figé : ses blocs ne sont pas des variables de ce modele, ce sont
+               des constantes. Rien ici ne peut les deplacer d'un creneau.
+    `taches` : les candidates au regime opportuniste (typiquement les non
+               datees). Chacune est placee ENTIEREMENT ou pas du tout.
+
+    Rend un nouveau Plan : les blocs de `plan` tels quels, plus les blocs
+    opportunistes, ces derniers portant `opportuniste=True`.
+
+    **Pourquoi figer la passe 1**, et pourquoi ce n'est pas un detail
+    d'implementation (design.md §5) : pour que la marge annoncee soit
+    *actionnable*. Une marge obtenue en reorganisant tout le reste est vraie
+    mais inutilisable — on ne la suivra pas, et on cessera de faire confiance
+    au chiffre. C'est la raison d'etre de cette fonction separee : on ne
+    resout pas « tout ensemble en deux objectifs », on resout la passe 1, on
+    la coule dans le beton, et on remplit ce qui reste.
+    """
+    horizon = indice_creneau(t0, horizon_fin, granularite)
+    tot = indice_creneau(t0, maintenant, granularite)
+
+    agregation = horizon_detaille_fin is not None
+    frontiere = (min(horizon, indice_creneau(t0, horizon_detaille_fin, granularite))
+                 if agregation else horizon)
+
+    modele = cp_model.CpModel()
+
+    cache = {}
+    for nom, ctx in contextes.items():
+        cache[nom] = _horizons(ctx, t0, horizon_fin, granularite, reunions, frontiere)
+
+    # --- la passe 1, en CONSTANTES et non en variables ---------------------
+    # Ses intervalles entrent dans AddNoOverlap et consomment de la capacite,
+    # mais ils ne sont pas deplacables : ce sont des intervalles fixes.
+    intervalles_ressource = []
+    charge_figee = {}            # (contexte, jour) -> creneaux deja consommes
+    deja_planifiees = set()
+
+    for bloc in plan.blocs:
+        deja_planifiees.add(bloc.uuid)
+        if bloc.externe:
+            continue   # ne consomme aucune capacite, par definition (decision 10)
+        intervalles_ressource.append(
+            modele.NewIntervalVar(bloc.debut, bloc.fin - bloc.debut, bloc.fin,
+                                  "fige_{}_{}".format(bloc.uuid[:8], bloc.indice)))
+        for indice in range(bloc.debut, bloc.fin):
+            jour = instant_creneau(t0, indice, granularite).date()
+            for nom in contextes:
+                if jour in cache[nom][2]:
+                    charge_figee[(nom, jour)] = charge_figee.get((nom, jour), 0) + 1
+                    break
+
+    # --- les candidates, en intervalles OPTIONNELS -------------------------
+    # Optionnels parce qu'une tache non datee n'a aucune obligation d'etre
+    # placee : s'il ne reste pas de place, elle attend. C'est la difference de
+    # nature avec la passe 1, ou ne pas placer produit du retard.
+    charge_du_jour = {}
+    blocs_modele = {}
+    presences = {}
+    debuts, fins = {}, {}
+    tous_les_debuts = []
+
+    for tache in taches:
+        if tache.estimated is None or tache.uuid in deja_planifiees:
+            continue
+        ctx = contextes.get(tache.contexte)
+        if ctx is None:
+            continue
+        if tache.externe:
+            continue   # un delai fournisseur n'est pas du travail opportuniste
+
+        fenetres, journees, _ = cache[tache.contexte]
+        bloc_min = _en_creneaux(ctx.bloc_min, granularite)
+        taille = _en_creneaux(tache.estimated, granularite)
+        tailles = decouper_en_blocs(taille, bloc_min, insecable=tache.insecable)
+
+        # UNE presence pour toute la tache : entierement placee, ou pas du tout.
+        # Un demi-travail planifie ne rend service a personne.
+        presence = modele.NewBoolVar("p_" + tache.uuid[:8])
+        presences[tache.uuid] = presence
+        blocs_modele[tache.uuid] = []
+        starts_tache, ends_tache = [], []
+
+        candidates = [(jour, plage.debut, plage.fin) for jour, plage in fenetres]
+        candidates += journees
+
+        for indice, t_bloc in enumerate(tailles):
+            nom = "o_{}#{}".format(tache.uuid[:8], indice)
+            retenues = []
+            for jour, borne_brute, borne_haute in candidates:
+                borne_basse = max(borne_brute, tot)
+                if borne_haute - borne_basse >= t_bloc:
+                    retenues.append((jour, borne_basse, borne_haute))
+            if not retenues:
+                modele.Add(presence == 0)
+                break
+
+            domaine = cp_model.Domain.FromIntervals(
+                [[bas, haut - t_bloc] for _, bas, haut in retenues])
+            depart = modele.NewIntVarFromDomain(domaine, "d_" + nom)
+            arrivee = modele.NewIntVarFromDomain(
+                cp_model.Domain.FromIntervals(
+                    [[bas + t_bloc, haut] for _, bas, haut in retenues]),
+                "f_" + nom)
+            modele.Add(arrivee == depart + t_bloc)
+
+            # L'intervalle n'existe que si la tache est retenue.
+            intervalles_ressource.append(
+                modele.NewOptionalIntervalVar(depart, t_bloc, arrivee, presence,
+                                              "i_" + nom))
+
+            litteraux = []
+            for jour, borne_basse, borne_haute in retenues:
+                lit = modele.NewBoolVar("w_{}_{}".format(nom, jour))
+                modele.Add(depart >= borne_basse).OnlyEnforceIf(lit)
+                modele.Add(depart + t_bloc <= borne_haute).OnlyEnforceIf(lit)
+                litteraux.append(lit)
+                charge_du_jour.setdefault(
+                    (tache.contexte, jour), []).append((t_bloc, lit))
+            # Exactement une fenetre SI la tache est retenue, aucune sinon :
+            # c'est ce qui evite qu'un bloc absent consomme de la capacite.
+            modele.AddExactlyOne(litteraux).OnlyEnforceIf(presence)
+            for lit in litteraux:
+                modele.AddImplication(lit, presence)
+
+            blocs_modele[tache.uuid].append((indice, depart, arrivee, t_bloc))
+            starts_tache.append(depart)
+            ends_tache.append(arrivee)
+            tous_les_debuts.append(depart)
+
+        if starts_tache:
+            d_t = modele.NewIntVar(tot, horizon, "dt_o_" + tache.uuid[:8])
+            f_t = modele.NewIntVar(tot, horizon, "ft_o_" + tache.uuid[:8])
+            modele.AddMinEquality(d_t, starts_tache)
+            modele.AddMaxEquality(f_t, ends_tache)
+            debuts[tache.uuid] = d_t
+            fins[tache.uuid] = f_t
+
+    # --- ressource unique : la passe 1 figee + les candidates retenues ------
+    if intervalles_ressource:
+        modele.AddNoOverlap(intervalles_ressource)
+
+    # --- capacite quotidienne : ce que la passe 1 a deja pris compte --------
+    for (nom_ctx, jour), charges in charge_du_jour.items():
+        capacite = cache[nom_ctx][2].get(jour)
+        if capacite is None:
+            continue
+        reste = capacite - charge_figee.get((nom_ctx, jour), 0)
+        modele.Add(sum(taille * lit for taille, lit in charges) <= max(0, reste))
+
+    # --- precedences, entre candidates et vers la passe 1 ------------------
+    fins_passe1 = {}
+    for bloc in plan.blocs:
+        fins_passe1[bloc.uuid] = max(fins_passe1.get(bloc.uuid, 0), bloc.fin)
+    for tache in taches:
+        if tache.uuid not in debuts:
+            continue
+        for predecesseur in tache.depends:
+            if predecesseur in fins:
+                modele.Add(debuts[tache.uuid] >= fins[predecesseur])
+            elif predecesseur in fins_passe1:
+                modele.Add(debuts[tache.uuid] >= fins_passe1[predecesseur])
+
+    def _solveur():
+        s = cp_model.CpSolver()
+        s.parameters.max_time_in_seconds = SECONDES_MAX
+        s.parameters.num_search_workers = 1
+        s.parameters.random_seed = 0
+        return s
+
+    if not presences:
+        return plan   # rien a faire : le plan de la passe 1 ressort intact
+
+    # === Objectif, en deux resolutions (design.md §5) =======================
+    # D'abord placer le plus d'urgence possible, ensuite seulement le faire au
+    # plus tot. L'urgence de Taskwarrior est un flottant ; on la met a l'echelle
+    # en entier, CP-SAT ne manipulant que des entiers.
+    echelle = 1000
+    poids = []
+    for tache in taches:
+        if tache.uuid in presences:
+            poids.append(int(round(tache.urgency * echelle)) * presences[tache.uuid])
+    modele.Maximize(sum(poids) if poids else 0)
+    s1 = _solveur()
+    etat1 = s1.Solve(modele)
+    if etat1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return plan   # aucune place : on rend la passe 1 telle quelle
+    urgence_optimale = int(s1.ObjectiveValue())
+    modele.Add(sum(poids) >= urgence_optimale)
+
+    # « au plus tot » : c'est l'inverse exact de la passe 1, et c'est voulu.
+    # Le travail sans echeance se fait des qu'il y a de la place ; le travail
+    # date se fait contre son mur.
+    modele.Minimize(sum(tous_les_debuts) if tous_les_debuts else 0)
+    s2 = _solveur()
+    etat = s2.Solve(modele)
+    if etat not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return plan
+
+    # --- on recolle : la passe 1 d'abord, telle quelle ---------------------
+    blocs = list(plan.blocs)
+    for uuid, liste in blocs_modele.items():
+        if not s2.Value(presences[uuid]):
+            continue
+        for indice, depart, arrivee, _ in liste:
+            debut = s2.Value(depart)
+            blocs.append(Bloc(uuid=uuid, indice=indice,
+                              debut=debut, fin=s2.Value(arrivee),
+                              externe=False,
+                              agrege=debut >= frontiere if agregation else False,
+                              opportuniste=True))
+    blocs.sort(key=lambda b: (b.debut, b.uuid, b.indice))
+
+    return Plan(
+        blocs=tuple(blocs),
+        t0=plan.t0,
+        granularite=plan.granularite,
+        statut=plan.statut,
+        retard_total=plan.retard_total,
+        en_retard=plan.en_retard,
     )

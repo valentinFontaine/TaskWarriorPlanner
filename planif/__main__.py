@@ -10,7 +10,8 @@ Deroule (BRIEF-LOT-A.md) :
 4. pre-verifications, rapport EN TETE de sortie ;
 5. passe 1 (``resoudre``) sur les taches datees, passe 2 (``completer``) sur
    les non datees ;
-6. ecriture du plan JSON, et de ``scheduled:`` seulement sur ``--ecrire-scheduled`` ;
+6. ecriture du plan JSON, de ``scheduled:`` seulement sur ``--ecrire-scheduled``,
+   et de ``due:``/``duePlanif:`` seulement sur ``--ecrire-due`` ;
 7. resume final : blocs par regime, statut, retard, taches en retard, temps
    des deux passes.
 
@@ -33,7 +34,8 @@ from planif.echeances import appliquer_echeances_projet
 from planif.calendrier import indice_creneau
 from planif.selection import capacite_restante, selectionner_candidates
 from planif.solveur import completer, resoudre
-from planif.sortie import ecrire_json, ecrire_scheduled
+from planif.dues import oublier_dues_calculees
+from planif.sortie import ecrire_due, ecrire_json, ecrire_scheduled
 from planif.reunions import reunions as charger_reunions
 from planif.tampon import limites_effectives
 from planif.taskwarrior import charger_taches
@@ -80,6 +82,10 @@ def construire_analyseur():
     analyseur.add_argument("--ecrire-scheduled", action="store_true",
                            help="ecrit scheduled: dans Taskwarrior ; sans cette "
                                 "option on n'ecrit jamais dans la base")
+    analyseur.add_argument("--ecrire-due", action="store_true",
+                           help="ecrit due: et duePlanif: dans Taskwarrior ; "
+                                "sans cette option on n'ecrit jamais dans la "
+                                "base")
     analyseur.add_argument("--ignorer-due-depassee", action="store_true",
                            help="exclut du plan les taches dont due est "
                                 "anterieure a maintenant")
@@ -299,6 +305,10 @@ def main(argv=None):
     filtre = tuple(shlex.split(args.filtre))
     taches = charger_taches(filtre=filtre, env=env,
                             contextes_connus=config.contextes.keys())
+    # les `due` que NOUS avons ecrites au run precedent ne sont pas des
+    # engagements : sans cet oubli, le plan se figerait sur sa propre sortie
+    # de la veille (planif/dues.py::oublier_dues_calculees).
+    taches = oublier_dues_calculees(taches)
 
     # --- 3. echeances de projet appliquees -----------------------------------
     taches = appliquer_echeances_projet(taches, echeances_projet)
@@ -379,6 +389,12 @@ def main(argv=None):
     if args.ecrire_scheduled:
         compte_rendu = ecrire_scheduled(plan, env=env)
         print("scheduled: {} modifiee(s), {} inchangee(s), {} ignoree(s).".format(
+            len(compte_rendu["modifiees"]), len(compte_rendu["inchangees"]),
+            len(compte_rendu["ignorees"])))
+
+    if args.ecrire_due:
+        compte_rendu = ecrire_due(plan, taches, env=env)
+        print("due: {} modifiee(s), {} inchangee(s), {} ignoree(s).".format(
             len(compte_rendu["modifiees"]), len(compte_rendu["inchangees"]),
             len(compte_rendu["ignorees"])))
 

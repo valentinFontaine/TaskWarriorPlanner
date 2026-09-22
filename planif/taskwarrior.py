@@ -111,6 +111,7 @@ def charger_taches(filtre=("status:pending",), env=None, contextes_connus=()):
             projet=brut.get("project"),
             estimated=estimated,
             due=_parse_date(brut.get("due")),
+            due_planif=_parse_date(brut.get("duePlanif")),
             scheduled=_parse_date(brut.get("scheduled")),
             depends=tuple(brut.get("depends", ())),
             tags=tags,

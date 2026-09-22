@@ -30,7 +30,8 @@ le plan se fige sur sa propre sortie de la veille -- est tranche : voir
 """
 from dataclasses import replace
 
-__all__ = ["dues_calculees", "est_calculee", "marquer_calculee", "UDA"]
+__all__ = ["dues_calculees", "est_calculee", "marquer_calculee",
+           "oublier_dues_calculees", "UDA"]
 
 
 def dues_calculees(plan, taches):
@@ -71,3 +72,22 @@ def est_calculee(tache):
 def marquer_calculee(tache, due):
     """Rend une copie de `tache` portant `due`, et la trace qu'on l'a ecrite."""
     return replace(tache, due=due, due_planif=due)
+
+
+def oublier_dues_calculees(taches):
+    """Rend les taches debarrassees des `due` QUE NOUS AVONS ECRITES.
+
+    A appeler avant toute replanification, et c'est le geste qui empeche le plan
+    de se figer sur sa sortie de la veille. Une `due` que nous avons posee n'est
+    pas un engagement : c'est un resultat, et un resultat se recalcule.
+
+    Sans ce geste, la regle « une tache qui porte deja un `due` propre le garde »
+    (voir `planif.echeances`) preserverait nos propres dates, et reculer
+    l'echeance d'un projet dans `echeances.json` ne relacherait rien du tout --
+    sans qu'aucune erreur ne soit signalee nulle part.
+
+    Ce qui vient de l'utilisateur n'est jamais touche : une date posee a la main
+    n'a pas de `due_planif` correspondant, donc `est_calculee` la refuse.
+    """
+    return [replace(t, due=None, due_planif=None) if est_calculee(t) else t
+            for t in taches]

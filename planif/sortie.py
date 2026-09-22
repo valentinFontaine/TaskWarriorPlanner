@@ -44,9 +44,12 @@ from datetime import timezone
 from pathlib import Path
 
 from planif.calendrier import instant_creneau
+from planif.dues import UDA as UDA_DUE_PLANIF
+from planif.dues import dues_calculees, est_calculee
 from planif.taskwarrior import RC_MASSE, exporter
 
-__all__ = ["VERSION_FORMAT", "plan_en_dict", "ecrire_json", "ecrire_scheduled"]
+__all__ = ["VERSION_FORMAT", "plan_en_dict", "ecrire_json", "ecrire_scheduled",
+           "ecrire_due"]
 
 #: Version du contrat JSON. A incrementer des que le format change de facon
 #: incompatible, pour que `../WebTaskManager` puisse refuser ce qu'il ne sait
@@ -212,6 +215,75 @@ def ecrire_scheduled(plan, env=None, dry_run=False, taches_existantes=None):
             continue
         res = subprocess.run(
             ["task", *RC_MASSE, uuid, "modify", "scheduled:" + voulu],
+            capture_output=True, text=True, encoding="utf-8", env=env,
+            check=False)
+        if res.returncode != 0:
+            raise RuntimeError("task modify a echoue pour {} ({}) : {}".format(
+                uuid, res.returncode, res.stderr.strip()))
+
+    return {"modifiees": modifiees,
+            "inchangees": inchangees,
+            "ignorees": sorted(ignorees)}
+
+
+def ecrire_due(plan, taches, env=None, dry_run=False, taches_existantes=None):
+    """Ecrit `due:` ET `duePlanif:` sur chaque tache placee. Rend un compte rendu.
+
+        {'modifiees': [...], 'inchangees': [...], 'ignorees': [...]}
+
+    La valeur vient de `planif.dues.dues_calculees(plan, taches)` : c'est la fin
+    du dernier bloc de la tache, la date « au plus tard » que le solveur a
+    trouvee. Les deux champs sont ecrits **dans la meme commande** `task
+    modify`, pour qu'ils ne puissent jamais diverger par une ecriture
+    partielle (une commande qui echoue a moitie laisse alors `due` et
+    `duePlanif` egaux tous les deux, ou tous les deux inchanges).
+
+    Sont mises dans `ignorees` :
+
+    - les taches **`+externe`** : comme pour `scheduled` (proposal.md
+      decision 10) ;
+    - les taches dont le `due` actuel est un **engagement humain** : un `due`
+      non nul pour lequel `planif.dues.est_calculee` est faux. Ecraser cette
+      date serait ecraser une decision de l'utilisateur ;
+    - les taches **absentes de la base**, pour qu'un plan un peu vieux ne fasse
+      pas echouer toute l'ecriture.
+
+    `dry_run=True` n'ecrit **rien** mais rend le meme compte rendu.
+
+    `env` doit porter un `TASKRC` ou un `TASKDATA` isole. Ce module ne le pose
+    jamais lui-meme (AGENTS.md §2).
+    """
+    if taches_existantes is None:
+        taches_existantes = exporter(env=env)
+    etat = {t["uuid"]: t for t in taches_existantes}
+    par_uuid_tache = {t.uuid: t for t in taches}
+
+    dues = dues_calculees(plan, taches)
+    externes = {b.uuid for b in plan.blocs if b.externe}
+
+    modifiees, inchangees, ignorees = [], [], []
+
+    for uuid in sorted(externes):
+        ignorees.append(uuid)
+
+    for uuid in sorted(set(dues) - externes):
+        tache = par_uuid_tache.get(uuid)
+        if tache is not None and tache.due is not None and not est_calculee(tache):
+            ignorees.append(uuid)
+            continue
+        if uuid not in etat:
+            ignorees.append(uuid)
+            continue
+        voulu = _vers_utc_taskwarrior(dues[uuid])
+        if etat[uuid].get("due") == voulu and etat[uuid].get(UDA_DUE_PLANIF) == voulu:
+            inchangees.append(uuid)
+            continue
+        modifiees.append(uuid)
+        if dry_run:
+            continue
+        res = subprocess.run(
+            ["task", *RC_MASSE, uuid, "modify",
+             "due:" + voulu, UDA_DUE_PLANIF + ":" + voulu],
             capture_output=True, text=True, encoding="utf-8", env=env,
             check=False)
         if res.returncode != 0:

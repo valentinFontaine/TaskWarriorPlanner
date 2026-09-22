@@ -30,7 +30,9 @@ def base_jetable(tmp_path):
         "bulk=0\n"
         "verbose=nothing\n"
         "uda.estTime.type=duration\n"
-        "uda.estTime.label=Est Time\n".format(donnees.as_posix()),
+        "uda.estTime.label=Est Time\n"
+        "uda.duePlanif.type=date\n"
+        "uda.duePlanif.label=Due Planif\n".format(donnees.as_posix()),
         encoding="utf-8",
     )
     env = dict(os.environ)

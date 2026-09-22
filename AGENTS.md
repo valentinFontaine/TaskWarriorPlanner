@@ -61,6 +61,29 @@ Quatre exigences, apprises en se faisant avoir sur chacune dans le dépôt voisi
    tests qui n'ont jamais tourné.
 4. **Ce qui écrit dans une base réelle ne se parallélise pas.**
 
+### Un bug trouvé sur des données réelles se reproduit dans `pytest`, toujours
+
+Les données réelles servent à **trouver** des défauts, jamais à les **surveiller** : on ne les
+a pas sous la main à chaque exécution, elles changent, et elles sont personnelles. Un bug
+observé sur la base de l'utilisateur n'est donc pas corrigé tant qu'un test de la suite ne le
+reproduit pas sur des données construites, réduites au minimum qui le déclenche.
+
+Les trois défauts les plus graves du 22/09/2026 ont tous été trouvés en **lançant** l'outil,
+aucun en relisant le code, et le dernier était strictement indétectable sans données
+réelles — une échéance vieille de 134 jours rendait le modèle infaisable, alors que tous les
+scénarios de test utilisaient des échéances futures ou à peine dépassées.
+
+La démarche, à chaque fois :
+
+1. réduire le cas réel jusqu'à la plus petite entrée qui reproduit (une dichotomie a désigné
+   *une* tâche parmi 278) ;
+2. écrire le test sur des données **construites**, paramétré autour du seuil trouvé, pour
+   qu'on voie où il bascule ;
+3. le voir rougir, puis corriger.
+
+Le paramétrage compte : sur ce bug-là, `1` et `30` jours passaient et `89` cassait, ce qui a
+montré le mécanisme — le seuil valait la longueur de l'horizon — avant même de lire le code.
+
 ---
 
 ## 4. Environnement

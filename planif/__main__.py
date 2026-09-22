@@ -30,9 +30,12 @@ from pathlib import Path
 
 from planif.config import charger_config, charger_echeances
 from planif.echeances import appliquer_echeances_projet
+from planif.calendrier import indice_creneau
+from planif.selection import capacite_restante, selectionner_candidates
 from planif.solveur import completer, resoudre
 from planif.sortie import ecrire_json, ecrire_scheduled
 from planif.stub_reunions import reunions as charger_reunions
+from planif.tampon import limites_effectives
 from planif.taskwarrior import charger_taches
 from planif.verifications import CODES, pre_verifications
 
@@ -86,6 +89,15 @@ def construire_analyseur():
                                 "(defaut : celle de Config)")
     analyseur.add_argument("--horizon", type=int, default=90, metavar="JOURS",
                            help="fin de l'horizon total, en jours (defaut : 90)")
+    analyseur.add_argument("--horizon-opportuniste", type=int, default=21,
+                           metavar="JOURS",
+                           help="horizon de la passe 2, en jours (defaut : 21). "
+                                "C'est le reglage qui gouverne sa performance : "
+                                "a 90 jours elle ne place RIEN, a 21 elle place "
+                                "135 taches sur 147 (mesure sur 278 taches "
+                                "reelles). Et c'est juste sur le fond : remplir "
+                                "avec des taches non datees trois mois a "
+                                "l'avance n'a aucun sens.")
     analyseur.add_argument("--filtre", default="status:pending", metavar="EXPR",
                            help="filtre Taskwarrior (defaut : status:pending)")
     analyseur.add_argument("-v", action="store_true", dest="verbeux",
@@ -161,20 +173,79 @@ def formater_pre_verifications(anomalies):
     return "\n".join(lignes)
 
 
-def formater_resume(plan, taches, temps_passe1, temps_passe2):
-    """Le resume final (BRIEF-LOT-A.md §7)."""
+def _retards_par_tache(plan, taches, contextes):
+    """Le retard de CHAQUE tache en retard, en creneaux.
+
+    `Plan` ne porte que la somme (`retard_total`), qui n'apprend rien : sur les
+    donnees reelles elle valait « 1448 j 4 h 30 » pour treize taches dont
+    certaines dataient de mai. On recalcule donc le detail, a partir des memes
+    limites effectives que le solveur, pour en tirer un maximum et une mediane.
+    """
+    limites = limites_effectives(taches, contextes)
+    retards = []
+    for uuid in plan.en_retard:
+        limite = limites.get(uuid)
+        fin = plan.fin(uuid)
+        if limite is None or fin is None:
+            continue
+        borne = indice_creneau(plan.t0, limite, plan.granularite)
+        fin_indice = indice_creneau(plan.t0, fin, plan.granularite)
+        retards.append(max(0, fin_indice - borne))
+    return retards
+
+
+def formater_resume(plan, taches, temps_passe1, temps_passe2,
+                    candidates_passe2=None, retards_par_tache=None,
+                    ecartees_passe2=None):
+    """Le resume final (BRIEF-LOT-A.md §7).
+
+    Deux corrections nees d'une execution sur les donnees reelles :
+
+    - **un resultat par passe.** Le resume annoncait « Statut : OPTIMAL » alors
+      que la passe 2 n'avait rien place du tout. Les deux faits etaient vrais
+      separement -- le statut affiche etait celui de la passe 1 -- et
+      l'ensemble etait trompeur. `Plan` ne porte qu'un statut, alors on compte
+      ce que la passe 2 a place face a ce qu'on lui a soumis : c'est plus
+      parlant qu'un mot-cle CP-SAT.
+    - **un retard exploitable.** « Retard total : 1448 j 4 h 30 » est exact et
+      n'apprend rien : c'est la somme des retards de treize taches dont
+      certaines datent de mai. Le maximum dit l'urgence, la mediane dit si
+      c'est general ou si une seule tache tire tout.
+    """
     par_uuid = {t.uuid: t for t in taches}
     n_heure = sum(1 for b in plan.blocs if not b.agrege)
     n_jour = sum(1 for b in plan.blocs if b.agrege)
     n_opportuniste = sum(1 for b in plan.blocs if b.opportuniste)
+    uuids_opportunistes = {b.uuid for b in plan.blocs if b.opportuniste}
 
     lignes = ["=== Resume ==="]
     lignes.append("Blocs regime detaille (heure) : {}".format(n_heure))
     lignes.append("Blocs regime agrege (jour)    : {}".format(n_jour))
     lignes.append("Blocs regime opportuniste     : {}".format(n_opportuniste))
-    lignes.append("Statut du solveur : {}".format(plan.statut))
-    lignes.append("Retard total : {}".format(
-        _fmt_duree_creneaux(plan.retard_total, plan.granularite)))
+    lignes.append("Passe 1 (travail date) : {} — {} tache(s) placee(s)".format(
+        plan.statut, len({b.uuid for b in plan.blocs} - uuids_opportunistes)))
+    if candidates_passe2 is not None:
+        ligne = "Passe 2 (opportuniste) : {} tache(s) placee(s) sur {} soumise(s)".format(
+            len(uuids_opportunistes), candidates_passe2)
+        if candidates_passe2 and not uuids_opportunistes:
+            ligne += "  <-- AUCUNE : le solveur n'a rien trouve dans le temps imparti"
+        lignes.append(ligne)
+    if ecartees_passe2:
+        lignes.append("  {} tache(s) ecartee(s) avant le solveur, faute de "
+                      "capacite sur l'horizon.".format(ecartees_passe2))
+
+    retards = list(retards_par_tache or ())
+    if retards:
+        retards.sort()
+        milieu = len(retards) // 2
+        mediane = (retards[milieu] if len(retards) % 2
+                   else (retards[milieu - 1] + retards[milieu]) / 2)
+        lignes.append("Retard : max {} | median {} | {} tache(s) concernee(s)".format(
+            _fmt_duree_creneaux(max(retards), plan.granularite),
+            _fmt_duree_creneaux(int(mediane), plan.granularite),
+            len(retards)))
+    else:
+        lignes.append("Retard : aucun")
     if plan.en_retard:
         descriptions = ", ".join(
             "« {} »".format(par_uuid[u].description) if u in par_uuid else u
@@ -254,9 +325,38 @@ def main(argv=None):
                     horizon_detaille_fin=horizon_detaille_fin)
     temps_passe1 = time.perf_counter() - debut_passe1
 
+    # Ce que la passe 1 a consomme, par contexte : c'est ce qu'il faut retirer
+    # de la capacite avant de decider combien de candidates soumettre.
+    par_uuid = {t.uuid: t for t in taches}
+    deja_pris = {}
+    for bloc in plan.blocs:
+        if bloc.externe:
+            continue           # un delai fournisseur ne consomme rien
+        tache = par_uuid.get(bloc.uuid)
+        if tache is None or tache.contexte is None:
+            continue
+        deja_pris[tache.contexte] = (deja_pris.get(tache.contexte, timedelta(0))
+                                     + (bloc.fin - bloc.debut) * config.granularite)
+
+    # L'horizon de la passe 2 est PLUS COURT que l'horizon total, et c'est le
+    # reglage qui gouverne sa performance : a 90 jours elle ne place rien du
+    # tout, a 21 elle place 135 taches sur 147 (mesure sur les donnees reelles).
+    # C'est aussi juste sur le fond -- remplir avec des taches non datees trois
+    # mois a l'avance n'a aucun sens, tout aura change d'ici la.
+    horizon_opportuniste_fin = t0 + timedelta(days=args.horizon_opportuniste)
+    capacites = capacite_restante(config.contextes, t0, maintenant,
+                                  horizon_opportuniste_fin, config.granularite,
+                                  deja_pris=deja_pris)
+    candidates, ecartees = selectionner_candidates(taches_non_datees, capacites)
+    if ecartees:
+        print("Passe 2 : {} candidate(s) retenue(s), {} ecartee(s) faute de "
+              "capacite sur {} jours.\n".format(
+                  len(candidates), len(ecartees), args.horizon_opportuniste))
+
     debut_passe2 = time.perf_counter()
-    plan = completer(plan, taches_non_datees, config.contextes, t0, maintenant,
-                     horizon_fin, config.granularite, reunions=reunions,
+    plan = completer(plan, candidates, config.contextes, t0, maintenant,
+                     horizon_opportuniste_fin, config.granularite,
+                     reunions=reunions,
                      horizon_detaille_fin=horizon_detaille_fin)
     temps_passe2 = time.perf_counter() - debut_passe2
 
@@ -274,7 +374,11 @@ def main(argv=None):
 
     # --- 7. resume ------------------------------------------------------------
     print()
-    print(formater_resume(plan, taches, temps_passe1, temps_passe2))
+    retards = _retards_par_tache(plan, taches, config.contextes)
+    print(formater_resume(plan, taches, temps_passe1, temps_passe2,
+                          candidates_passe2=len(candidates),
+                          retards_par_tache=retards,
+                          ecartees_passe2=len(ecartees)))
 
     return 0
 

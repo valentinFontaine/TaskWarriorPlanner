@@ -236,3 +236,67 @@ def test_une_anomalie_courte_reste_citee_en_entier():
     texte = formater_pre_verifications([anomalie])
     assert "Tester le backend" in texte
     assert "autres" not in texte
+
+
+# ---------------------------------------------------------------------------
+# Point 4 : le resume ne doit pas mentir
+# ---------------------------------------------------------------------------
+#
+# Constate sur les donnees reelles : le resume affichait « Statut : OPTIMAL »
+# alors que la passe 2 n'avait rien place du tout (`UNKNOWN` apres 60 s). Les
+# deux faits etaient vrais separement -- le statut affiche etait celui de la
+# passe 1 -- et l'ensemble etait trompeur.
+#
+# Et « Retard total : 1448 j 4 h 30 » est exact et inutilisable : c'est la
+# somme des retards de 13 taches dont certaines datent de mai. Le maximum et la
+# mediane disent quelque chose ; une somme, non.
+
+def _plan_factice(n_opportunistes, statut="OPTIMAL", retards_creneaux=()):
+    from datetime import datetime, timedelta
+
+    from planif.solveur import Bloc, Plan
+
+    blocs = tuple(
+        Bloc(uuid="opp-{}".format(i), indice=0, debut=i * 2, fin=i * 2 + 2,
+             externe=False, agrege=False, opportuniste=True)
+        for i in range(n_opportunistes))
+    return Plan(blocs=blocs, t0=datetime(2026, 9, 22),
+                granularite=timedelta(minutes=30), statut=statut,
+                retard_total=sum(retards_creneaux),
+                en_retard=tuple("r-{}".format(i)
+                                for i in range(len(retards_creneaux))))
+
+
+def test_le_resume_distingue_le_statut_des_deux_passes():
+    from planif.__main__ import formater_resume
+
+    texte = formater_resume(_plan_factice(0), [], 1.0, 60.0,
+                            candidates_passe2=184)
+
+    assert "184" in texte, texte
+    # Le resume doit dire que la passe 2 n'a rien place, pas se contenter du
+    # statut de la passe 1.
+    assert "0" in texte
+    lignes_passe2 = [l for l in texte.splitlines() if "passe 2" in l.lower()]
+    assert lignes_passe2, "aucune ligne ne parle du resultat de la passe 2"
+
+
+def test_le_resume_ne_masque_pas_une_passe_2_qui_a_tout_place():
+    from planif.__main__ import formater_resume
+
+    texte = formater_resume(_plan_factice(12), [], 1.0, 2.0,
+                            candidates_passe2=12)
+    lignes_passe2 = [l for l in texte.splitlines() if "passe 2" in l.lower()]
+    assert any("12" in l for l in lignes_passe2), lignes_passe2
+
+
+def test_le_retard_est_donne_en_maximum_et_mediane_pas_en_somme():
+    from planif.__main__ import formater_resume
+
+    # Trois taches en retard de 2, 4 et 100 creneaux : mediane 4, max 100.
+    texte = formater_resume(_plan_factice(0, retards_creneaux=(2, 4, 100)),
+                            [], 1.0, 1.0, candidates_passe2=0,
+                            retards_par_tache=(2, 4, 100))
+
+    assert "max" in texte.lower()
+    assert "median" in texte.lower() or "médian" in texte.lower()

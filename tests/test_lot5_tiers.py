@@ -14,9 +14,10 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from planif.calendrier import indice_creneau, instant_creneau
+from planif.echeances import appliquer_echeances_projet
 from planif.solveur import resoudre
 from planif.tampon import limites_effectives
-from tests.cas_reference import (CONTEXTE_PRO, CONTEXTES, ECHEANCE_PROJET,
+from tests.cas_reference import (CONTEXTE_PRO, CONTEXTES, ECHEANCE_PROJET, PROJET,
                                  GRANULARITE, HORIZON_FIN, MAINTENANT, T0,
                                  UUID_A, UUID_B, UUID_C, UUID_D, chaine,
                                  taches_de_remplissage)
@@ -29,10 +30,13 @@ LIMITE_D_ATTENDUE = datetime(2026, 11, 20, 17, 0)   # vendredi
 
 
 def _avec_due_sur_d(taches):
-    """Recree D avec le `due` du projet (les Tache sont frozen)."""
-    from dataclasses import replace
-    return [replace(t, due=ECHEANCE_PROJET) if t.uuid == UUID_D else t
-            for t in taches]
+    """Pose l'echeance du projet, via l'UNIQUE point du depot qui porte la regle.
+
+    Voir `planif/echeances.py` : comment une echeance de projet descend sur les
+    taches est une question encore ouverte, donc elle est isolee la et nulle
+    part ailleurs.
+    """
+    return appliquer_echeances_projet(taches, {PROJET: ECHEANCE_PROJET})
 
 
 @pytest.fixture(scope="module")

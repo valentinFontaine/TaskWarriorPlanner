@@ -16,8 +16,9 @@ from datetime import datetime, timedelta
 import pytest
 
 from planif.diagnostic import diagnostiquer
+from planif.echeances import appliquer_echeances_projet
 from planif.modele import Tache
-from tests.cas_reference import (CONTEXTE_PRO, CONTEXTES, ECHEANCE_PROJET,
+from tests.cas_reference import (CONTEXTE_PRO, CONTEXTES, ECHEANCE_PROJET, PROJET,
                                  GRANULARITE, HORIZON_FIN, MAINTENANT, T0,
                                  UUID_D, chaine)
 
@@ -40,8 +41,7 @@ def _tache(suffixe, heures, due=None, tags=("pro",), scheduled=None, depends=())
 
 def test_un_modele_faisable_ne_rend_aucun_noyau():
     """Exigence explicite : un modele faisable ne rend AUCUN noyau."""
-    taches = [replace(t, due=ECHEANCE_PROJET) if t.uuid == UUID_D else t
-              for t in chaine()]
+    taches = appliquer_echeances_projet(chaine(), {PROJET: ECHEANCE_PROJET})
     diag = diagnostiquer(taches, CONTEXTES, T0, MAINTENANT, HORIZON_FIN,
                          GRANULARITE)
     assert diag.faisable is True

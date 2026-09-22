@@ -23,8 +23,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from planif.echeances import appliquer_echeances_projet
 from planif.solveur import resoudre
-from tests.cas_reference import (CONTEXTES, ECHEANCE_PROJET, GRANULARITE,
+from tests.cas_reference import (CONTEXTES, ECHEANCE_PROJET, GRANULARITE, PROJET,
                                  HORIZON_FIN, MAINTENANT, T0, UUID_C, UUID_D,
                                  chaine)
 
@@ -85,9 +86,13 @@ def banc_de_taches(nombre=NOMBRE_DE_TACHES):
 
 
 def _avec_due_sur_d(taches):
-    """Pose l'echeance du projet sur D, la tache terminale de la chaine."""
-    return [replace(t, due=ECHEANCE_PROJET) if t.uuid == UUID_D else t
-            for t in taches]
+    """Pose l'echeance du projet, via l'UNIQUE point du depot qui porte la regle.
+
+    Voir `planif/echeances.py` : comment une echeance de projet descend sur les
+    taches est une question encore ouverte, donc elle est isolee la et nulle
+    part ailleurs.
+    """
+    return appliquer_echeances_projet(taches, {PROJET: ECHEANCE_PROJET})
 
 
 # --------------------------------------------------------------------------

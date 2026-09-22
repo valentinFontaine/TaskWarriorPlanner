@@ -72,6 +72,7 @@ est de prendre la plus lisible et de dire pourquoi :
    ce qui evite d'avoir deux representations du meme fait. Le regime agrege
    reutilise exactement le meme mecanisme, avec la journee entiere pour fenetre.
 """
+import logging
 import math
 from dataclasses import dataclass
 from datetime import timedelta
@@ -82,6 +83,10 @@ from planif.calendrier import disponibilite, indice_creneau, instant_creneau
 from planif.tampon import limites_effectives
 
 __all__ = ["Bloc", "Plan", "resoudre", "completer", "decouper_en_blocs"]
+
+# Ce module ne configure PAS le journal : c'est a l'appelant (la ligne de
+# commande) de decider ou vont les messages. Il se contente de les emettre.
+_LOG = logging.getLogger(__name__)
 
 # Duree maximale laissee au solveur. Au-dela on rend ce qu'on a trouve, plutot
 # que de bloquer : le plan doit sortir.
@@ -550,9 +555,20 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
         deja_planifiees.add(bloc.uuid)
         if bloc.externe:
             continue   # ne consomme aucune capacite, par definition (decision 10)
-        intervalles_ressource.append(
-            modele.NewIntervalVar(bloc.debut, bloc.fin - bloc.debut, bloc.fin,
-                                  "fige_{}_{}".format(bloc.uuid[:8], bloc.indice)))
+        # Un bloc AGREGE n'entre PAS dans AddNoOverlap. Ce n'est pas une
+        # tolerance, c'est la definition du regime : au-dela de la frontiere on
+        # repond a la journee et non a l'heure, et deux blocs d'une meme journee
+        # peuvent donc legitimement se chevaucher (design.md §1). Les verser
+        # dans une contrainte de non-chevauchement rendait le modele infaisable
+        # DES SA CONSTRUCTION -- `completer` retombait sur son `return plan` de
+        # secours et ne placait plus une seule tache non datee, en silence.
+        # Leur capacite reste comptee juste en dessous par `charge_figee`, qui
+        # travaille en VOLUME par journee : c'est exactement la garantie que le
+        # regime agrege promet, et la seule qu'il puisse tenir.
+        if not bloc.agrege:
+            intervalles_ressource.append(
+                modele.NewIntervalVar(bloc.debut, bloc.fin - bloc.debut, bloc.fin,
+                                      "fige_{}_{}".format(bloc.uuid[:8], bloc.indice)))
         for indice in range(bloc.debut, bloc.fin):
             jour = instant_creneau(t0, indice, granularite).date()
             for nom in contextes:
@@ -679,6 +695,7 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
         return s
 
     if not presences:
+        _LOG.info("passe 2 : aucune candidate soumise, le plan ressort intact")
         return plan   # rien a faire : le plan de la passe 1 ressort intact
 
     # === Objectif, en deux resolutions (design.md §5) =======================
@@ -694,6 +711,15 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     s1 = _solveur()
     etat1 = s1.Solve(modele)
     if etat1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        # Ne devrait pas arriver : les candidates sont des intervalles
+        # OPTIONNELS, donc « ne rien placer » est toujours une solution. Si on
+        # passe ici, c'est que le modele est contradictoire avant meme d'avoir
+        # a choisir -- ce qui etait precisement le cas des blocs agreges verses
+        # dans AddNoOverlap. Le plan ressort ampute : on le dit fort.
+        _LOG.warning(
+            "passe 2 : modele sans solution (%s), 0 tache placee sur %d "
+            "candidates ; le plan ressort tel quel",
+            s1.StatusName(etat1), len(presences))
         return plan   # aucune place : on rend la passe 1 telle quelle
     urgence_optimale = int(s1.ObjectiveValue())
     modele.Add(sum(poids) >= urgence_optimale)
@@ -705,6 +731,10 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     s2 = _solveur()
     etat = s2.Solve(modele)
     if etat not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        _LOG.warning(
+            "passe 2 : pas de solution au second objectif (%s), 0 tache placee "
+            "sur %d candidates ; le plan ressort tel quel",
+            s2.StatusName(etat), len(presences))
         return plan
 
     # --- on recolle : la passe 1 d'abord, telle quelle ---------------------
@@ -720,6 +750,13 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
                               agrege=debut >= frontiere if agregation else False,
                               opportuniste=True))
     blocs.sort(key=lambda b: (b.debut, b.uuid, b.indice))
+
+    # Les deux nombres, toujours, meme quand tout va bien : c'est ce qui permet
+    # de voir un plan ampute dans la sortie au lieu de le prendre pour complet.
+    placees = sum(1 for uuid in presences if s2.Value(presences[uuid]))
+    journal = _LOG.info if placees == len(presences) else _LOG.warning
+    journal("passe 2 : %d tache(s) placee(s) sur %d candidate(s)",
+            placees, len(presences))
 
     return Plan(
         blocs=tuple(blocs),

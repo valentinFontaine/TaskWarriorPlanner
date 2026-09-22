@@ -87,7 +87,14 @@ def test_un_projet_inconnu_ne_casse_rien():
 def test_la_regle_n_est_ecrite_qu_a_un_seul_endroit():
     """Isolation : aucun autre module de planif/ ne reimplemente la regle.
 
-    On cherche la notion de « terminale » ailleurs que dans planif/echeances.py.
+    On cherche la notion de « terminale » ailleurs que dans planif/echeances.py :
+    c'est *ca* qui serait une reimplementation. Appeler `appliquer_echeances_projet`
+    depuis un autre module n'en est pas une : c'est exactement l'usage prevu de
+    cette fonction, exportee dans `__all__` et listee comme telle dans le cahier
+    des charges du Lot A (`planif/__main__.py` l'appelle a l'etape 3 de son
+    deroule). Ce test ne cherchait donc que `taches_terminales`, la fonction qui
+    PORTE la regle ; il a ete resserre a ce seul nom quand le Lot A a ajoute le
+    premier appelant legitime de `appliquer_echeances_projet`.
     Si un jour un autre module se met a deduire lui-meme ou poser une echeance
     de projet, ce test doit le signaler — c'est precisement ce qu'on veut
     eviter tant que la question n'est pas tranchee.
@@ -99,7 +106,7 @@ def test_la_regle_n_est_ecrite_qu_a_un_seul_endroit():
         if fichier.name == "echeances.py":
             continue
         texte = fichier.read_text(encoding="utf-8")
-        if "taches_terminales" in texte or "appliquer_echeances_projet" in texte:
+        if "taches_terminales" in texte:
             coupables.append(fichier.name)
     assert coupables == [], \
         "la regle fuit hors de planif/echeances.py : {}".format(coupables)

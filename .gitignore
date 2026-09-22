@@ -6,3 +6,6 @@ __pycache__/
 # taskrc local : pointe vers une base specifique a la machine
 taskrc
 plan.json
+
+# Echeances de projet : donnee personnelle, pas du code. Voir echeances.exemple.json.
+echeances.json

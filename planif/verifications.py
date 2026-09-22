@@ -30,13 +30,15 @@ from planif.taskwarrior import vers_local_naif
 
 __all__ = ["Anomalie", "CODES", "pre_verifications",
            "verifier_insecables", "verifier_cycles", "verifier_dues",
-           "verifier_externes_sans_estimated", "verifier_sans_contexte"]
+           "verifier_externes_sans_estimated", "verifier_sans_estimated",
+           "verifier_sans_contexte"]
 
 CODES = (
     "insecable-trop-longue",
     "cycle-dependances",
     "due-depassee",
     "externe-sans-estimated",
+    "sans-estimated",
     "sans-contexte",
 )
 
@@ -228,6 +230,31 @@ def verifier_externes_sans_estimated(taches):
                       tuple(t.uuid for t in concernees))]
 
 
+def verifier_sans_estimated(taches):
+    """Taches ordinaires sans `estimated` : le solveur ne les voit jamais.
+
+    `planif/solveur.py` les saute (`if tache.estimated is None: continue`) en
+    annoncant qu'elles sont « signalees par les pre-verifications ». Elles ne
+    l'etaient pas : seul le cas `+externe` avait sa verification. Une tache
+    ordinaire sans duree disparaissait donc du plan sans un mot, et sur une
+    base ou la plupart des taches n'ont pas d'estimation, on pouvait regarder
+    un calendrier vide en croyant que tout allait bien.
+
+    Les `+externe` restent a `verifier_externes_sans_estimated`, qui dit mieux
+    les choses : ce n'est pas « une charge inconnue » mais « un delai
+    fournisseur non renseigne ». Deux problemes differents, un seul message
+    par tache.
+    """
+    concernees = [t for t in taches if not t.externe and t.estimated is None]
+    if not concernees:
+        return []
+    lignes = ", ".join("« {} »".format(t.description) for t in concernees)
+    message = ("Durée estimée absente : ces tâches sont absentes du plan, le "
+               "solveur ne les voit pas — {}.".format(lignes))
+    return [Anomalie("sans-estimated", message,
+                      tuple(t.uuid for t in concernees))]
+
+
 def verifier_sans_contexte(taches, contextes):
     """Taches sans contexte attribuable (contexte absent ou inconnu).
 
@@ -256,6 +283,7 @@ def pre_verifications(taches, contextes, maintenant):
         "cycle-dependances": verifier_cycles(taches),
         "due-depassee": verifier_dues(taches, maintenant),
         "externe-sans-estimated": verifier_externes_sans_estimated(taches),
+        "sans-estimated": verifier_sans_estimated(taches),
         "sans-contexte": verifier_sans_contexte(taches, contextes),
     }
     resultat = []

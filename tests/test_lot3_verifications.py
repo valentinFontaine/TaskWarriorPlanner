@@ -209,9 +209,15 @@ def test_plusieurs_anomalies_et_ordre_deterministe():
     anomalies_1 = pre_verifications(taches, config.contextes, MAINTENANT)
     anomalies_2 = pre_verifications(taches, config.contextes, MAINTENANT)
 
-    assert len(anomalies_1) == 3
+    # Quatre et non trois : `_tache` ne pose pas d'`estimated`, donc u1 et u3
+    # (u2 etant `+externe`, couverte par sa propre verification) tombent aussi
+    # sous « sans-estimated », ajoutee au lot B. Ce n'est pas du bruit : sans
+    # duree, ces taches ne sont jamais soumises au solveur, et c'est
+    # precisement ce que personne ne voyait avant.
+    assert len(anomalies_1) == 4
     codes = {an.code for an in anomalies_1}
-    assert codes == {"due-depassee", "externe-sans-estimated", "sans-contexte"}
+    assert codes == {"due-depassee", "externe-sans-estimated",
+                     "sans-estimated", "sans-contexte"}
     assert anomalies_1 == anomalies_2
 
 

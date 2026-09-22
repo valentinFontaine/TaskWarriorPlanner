@@ -1,0 +1,5 @@
+{
+  "_lisez-moi": "Copiez ce fichier en « echeances.json » et remplacez son contenu. Une entree par projet Taskwarrior : le nom exact du projet, puis son echeance. « 2027-01-15 » vaut la FIN du 15 (23:59) ; ajoutez une heure pour etre precis. Taskwarrior ne porte pas d'echeance de projet, seulement des due par tache : c'est ici, et nulle part ailleurs, que la passe arriere trouve ses murs. Sans aucune echeance, tout part en regime opportuniste et le plan se tasse au plus tot.",
+  "NPD.exemple-court": "2027-01-15",
+  "NPD.exemple-precis": "2027-03-02T14:00:00"
+}

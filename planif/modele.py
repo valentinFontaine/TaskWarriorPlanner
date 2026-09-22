@@ -101,6 +101,13 @@ class Tache:
     projet: str = None
     estimated: timedelta = None
     due: datetime = None
+    #: Valeur de `due` que la passe 1 a ecrite au run precedent (UDA
+    #: `duePlanif`). On stocke la DATE et non un drapeau : un drapeau ne
+    #: survit pas a un `task X modify due:...` fait hors de l'outil, alors
+    #: qu'une valeur, si. `due == due_planif` veut dire « cette echeance est
+    #: notre propre sortie » ; toute divergence veut dire qu'un humain est
+    #: passe apres nous, et son engagement prime.
+    due_planif: datetime = None
     scheduled: datetime = None
     depends: tuple = ()
     tags: tuple = ()

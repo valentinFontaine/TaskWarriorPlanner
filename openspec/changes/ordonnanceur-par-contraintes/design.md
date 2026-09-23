@@ -43,6 +43,27 @@ discussion doit pouvoir implémenter un lot de `tasks.md` en ne lisant que ce fi
 | `+fige` | début imposé : on conserve le `scheduled` courant |
 | `+asap` | exception au « au plus tard » — traité par une échéance artificielle proche |
 
+### Qui fait la tâche : pas de champ, un tag
+
+**Décision utilisateur du 22/09/2026.** Il n'y a pas et il n'y aura pas de champ
+`assignee`. Le solveur n'a besoin que d'une chose : est-ce que cette tâche
+consomme *ma* capacité, oui ou non — et `+externe` y répond déjà entièrement.
+
+L'acteur, quand il faut le connaître, se note **en tag** :
+
+    +externe +serviceAchat      la demande est chez les achats
+    +externe +Ludovic           c'est Ludovic qui doit répondre
+
+Le gain est immédiat et ne coûte rien au modèle : `task +externe +serviceAchat`
+donne la liste de ce qu'un tiers a à faire, `task +externe +Ludovic` prépare un
+point avec lui. Un champ dédié n'aurait rien apporté de plus, puisqu'il n'entre
+dans aucune contrainte.
+
+**Ce qui est écarté, et qu'il ne faut pas confondre avec ça :** une capacité
+limitée *par acteur* — le service achat ne traitant pas trois demandes de front.
+Ce serait une ressource supplémentaire dans le modèle, donc une autre
+fonctionnalité, autrement plus lourde. Elle n'est pas au programme.
+
 ### Convention sur les `datetime`
 
 À l'intérieur du modèle (grilles horaires, tampon, vérifications), tout `datetime`

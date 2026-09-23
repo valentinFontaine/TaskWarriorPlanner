@@ -176,3 +176,58 @@ def test_une_due_calculee_se_distingue_d_une_due_posee_par_l_utilisateur(dues):
     assert est_calculee(tache) is True
     assert est_calculee(chaine_de_la_piece()[3]) is False, \
         "l'echeance du montage est posee par l'utilisateur, pas calculee"
+
+
+# ==========================================================================
+# Le regime SANS AUCUNE DEPENDANCE, souleve par l'utilisateur le 23/09/2026
+# ==========================================================================
+#
+# On avait ecrit qu'un projet dont aucune tache ne porte de `depends` serait
+# « inexploitable », puisque TOUTES ses taches sont terminales et recoivent la
+# meme `due`. C'est faux, et l'utilisateur l'a releve : cette date commune n'est
+# qu'une ENTREE. La passe 1 empile ensuite les taches a rebours selon la
+# capacite, et `dues_calculees` rend a chacune une date DIFFERENTE.
+#
+# C'est meme le regime le plus courant sur ses donnees : la plupart des projets
+# n'ont pas de chaine interne.
+
+PROJET_PLAT = "NPD.exemple.plat"
+ECHEANCE_PLATE = datetime(2026, 12, 18, 17, 0)
+
+
+def _taches_sans_dependance(nombre=6, heures=3):
+    return [Tache(uuid="eeeeeeee-0000-0000-0000-{:012d}".format(i),
+                  description="Tache plate {}".format(i), projet=PROJET_PLAT,
+                  estimated=timedelta(hours=heures), due=ECHEANCE_PLATE,
+                  tags=("pro",), contexte="pro")
+            for i in range(1, nombre + 1)]
+
+
+@pytest.fixture(scope="module")
+def dues_plates():
+    from planif.dues import dues_calculees
+    taches = _taches_sans_dependance()
+    plan = resoudre(taches, CONTEXTES, T0, MAINTENANT, HORIZON_FIN, GRANULARITE)
+    assert plan.blocs, "plan vide ({})".format(plan.statut)
+    return dues_calculees(plan, taches)
+
+
+def test_une_echeance_commune_ressort_en_dates_etagees(dues_plates):
+    """L'entree est une date unique ; la sortie ne l'est pas.
+
+    C'est tout l'interet de la passe 1 dans ce regime : elle transforme « tout
+    pour le 18 decembre » en un echeancier tenable, tache par tache.
+    """
+    distinctes = set(dues_plates.values())
+    assert len(distinctes) > 1, (
+        "les {} taches ressortent avec la meme date : la passe 1 n'a rien "
+        "etage".format(len(dues_plates)))
+
+
+def test_aucune_tache_ne_depasse_l_echeance_commune(dues_plates):
+    assert max(dues_plates.values()) <= ECHEANCE_PLATE
+
+
+def test_toutes_les_taches_sont_datees(dues_plates):
+    """Aucune n'est oubliee : six taches, six echeances."""
+    assert len(dues_plates) == 6

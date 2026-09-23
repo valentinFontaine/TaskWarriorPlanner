@@ -361,6 +361,23 @@ E1 et E2 suffisent pour commencer à s'en servir. E3 et E4 ferment la boucle.
   le plan affiché**, sans recalcul, et refuse si la base a changé depuis le
   calcul (empreinte `uuid|modified`).
 
+**Run de nuit n°3 (24/09)** : étapes 0 à 6 faites (B `6334ef6`..`f6193d1`,
+A `be7fc84`..`f0715ce`), détail dans `RAPPORT-NUIT-3.md`. Quatre points ouverts :
+
+1. **`+fige` ignoré en passe 2** : Valider a ramené deux tâches figées à la
+   main à leur créneau d'origine. Contradiction entre « Valider écrit le plan
+   affiché » et « une tâche figée ne bouge plus ».
+2. **Précédence perdue** (défaut antérieur, grave) : seules les tâches datées
+   entrent en passe 1 ; leurs prédécesseurs sans échéance tombent en passe 2
+   et la précédence disparaît. Sur la base de test, 23 tâches seulement dans
+   le plan, et les 5 `+externe` absentes.
+3. **Un `+fige` sur une tâche à précision « jour » rend la passe 1
+   infaisable** (16 tâches placées → 0) ; l'interface affiche pourtant
+   « Calcul terminé » et Valider accepte d'écrire ce plan.
+4. **`modify -TAGS` ne fait rien** sur Taskwarrior 3.5 (code 0, mesuré le
+   24/09) : `PUT /api/task/{id}/modify` (`main_fastapi.py:725`) ne peut pas
+   retirer un tag décoché dans l'éditeur. `-<tag>` et `tags:` fonctionnent.
+
 Faits mesurés qui en découlent : `plan.json` ne porte pas les `due` (à
 ajouter) ; `PUT /api/task/{id}/modify` efface les tags avant de les réécrire
 (ne pas s'en servir pour figer) ; `+fige` n'impose que le début du bloc 0, donc

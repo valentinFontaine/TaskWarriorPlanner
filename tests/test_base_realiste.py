@@ -479,6 +479,43 @@ def test_motif_profondeur_trois_niveaux_avec_echeance_racine_seule():
     assert trouve, "aucune dependance ne traverse deux sous-projets"
 
 
+def test_motif_sous_sous_projets():
+    """Des projets a 4 niveaux (ex. NPD.X.achats.devis), comme dans le reel :
+    - au moins deux sous-sous-projets distincts sous un meme sous-projet ;
+    - ce sous-projet porte aussi des taches en propre (niveaux melanges) ;
+    - au moins une dependance relie un sous-sous-projet a une tache d'une
+      AUTRE branche de la meme racine (hors de son sous-projet)."""
+    base = generer(LUNDI_FIXE)
+    projets = {t["project"] for t in base.taches}
+
+    quatre = [p for p in projets if p.count(".") >= 3]
+    assert quatre, "aucun projet a >= 4 niveaux"
+
+    par_parent = {}
+    for p in quatre:
+        par_parent.setdefault(".".join(p.split(".")[:3]), set()).add(p)
+    parents = [pa for pa, enfants in par_parent.items()
+               if len(enfants) >= 2 and pa in projets]
+    assert parents, ("aucun sous-projet ne porte a la fois des taches en propre "
+                     "et >= 2 sous-sous-projets")
+
+    index = _index_par_uuid(base.taches)
+    trouve = False
+    for t in base.taches:
+        for pred in _predecesseurs(t):
+            p_pred = index.get(pred)
+            if p_pred is None:
+                continue
+            for a, b in ((t["project"], p_pred["project"]),
+                         (p_pred["project"], t["project"])):
+                if a.count(".") < 3:
+                    continue
+                sa, sb = a.split("."), b.split(".")
+                if sa[:2] == sb[:2] and len(sb) >= 3 and sa[2] != sb[2]:
+                    trouve = True
+    assert trouve, "aucune dependance ne relie un sous-sous-projet a une autre branche"
+
+
 def test_motif_externe_intercale():
     """Chaine utilisateur -> +externe -> utilisateur -> +externe."""
     base = generer(LUNDI_FIXE)

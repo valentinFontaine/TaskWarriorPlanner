@@ -154,11 +154,18 @@ def _specs(aujourdhui):
     # chaque sous-projet : c'est le cas qui exerce planif/echeances.py
     # (terminales calculees sur l'arbre entier).
     # -----------------------------------------------------------------
+    # Situation reelle : sous NPD.Orion.achats, les devis et les commandes
+    # sont suivis dans des sous-sous-projets separes (NPD.Orion.achats.devis,
+    # NPD.Orion.achats.commandes), achats gardant par ailleurs des taches en
+    # propre (S3 : "Usinage sous-traite support"). Le devis carter (dans le
+    # sous-sous-projet achats.devis) depend du plan carter, qui vit dans une
+    # autre branche (NPD.Orion.plans) : c'est le cas a 4 niveaux qui exerce
+    # le motif "sous-sous-projet relie a une autre branche de la racine".
     specs += [
         dict(description="Plan de detail carter",
              project="NPD.Orion.plans", tags=("pro",), heures=6),
         dict(description="Devis fournisseur usinage carter",
-             project="NPD.Orion.achats", tags=("pro",), heures=1,
+             project="NPD.Orion.achats.devis", tags=("pro",), heures=1,
              depends=("Plan de detail carter",)),
         dict(description="Essai fonctionnel carter",
              project="NPD.Orion.essais", tags=("pro",), heures=4,
@@ -177,7 +184,7 @@ def _specs(aujourdhui):
         dict(description="Usinage sous-traite support",
              project="NPD.Orion.achats", tags=("pro", "externe"), jours=15),
         dict(description="Commande moteur fournisseur",
-             project="NPD.Orion.achats", tags=("pro", "externe"), jours=20),
+             project="NPD.Orion.achats.commandes", tags=("pro", "externe"), jours=20),
         dict(description="Assembler prototype",
              project="NPD.Orion.montage", tags=("pro",), heures=8,
              depends=("Plan de detail support moteur",

@@ -520,10 +520,41 @@ hors projet distinguées), projet choisi dans le filtre de `nav.js`. Endpoint
 vérifié par 10 mutations ; la page, non. Vérifié à l'œil sur NPD.Orion de la
 base de test : 16 nœuds, 13 flèches, 5 cadres, conformes.
 
-**Ouvert — lisibilité, à trancher par l'utilisateur** : le SVG (2018 px de
-large) est réduit à la largeur de la page, le texte tombe à ~9 px. Options :
-défilement horizontal à taille réelle, orientation haut-bas, ou taille réelle
-avec zoom.
+**Lisibilité — tranchée le 23/09** : zoom et déplacement (boutons + molette +
+glisser), cadres imbriqués par sous-projet, le projet demandé sans cadre propre,
+même marge entre le cadre et la nav, le bas et les côtés.
+
+### H2. Éditer les dépendances depuis le graphe (demandé le 23/09)
+
+Le graphe devient **l'interface de création des dépendances**. Geste voulu : on
+sélectionne une ou plusieurs tâches, on clique « → » (les sélectionnées
+s'allument), puis on clique la tâche dépendante, qui porte le `depends`.
+
+Mesuré sur Taskwarrior 3.5 (base temporaire) :
+
+    depends:X          ajoute X (ne remplace pas la liste)
+    depends:-X         retire X
+    depends:X,-Y       ajout et retrait en une commande
+    depends:+X         REFUSE ("Invalid dependency value")
+    cycle direct ou indirect : refuse par Taskwarrior, code 2,
+                       "Circular dependency detected and disallowed."
+
+Décisions : pas de création de dépendance entre deux projets racine depuis le
+graphe — il ne montre de toute façon que le projet choisi et ses voisins déjà
+liés, donc la limite est naturelle. Retirer un lien : clic sur la flèche (elle
+s'allume), puis bouton « Retirer le lien » ou touche Suppr. Annuler un geste
+en cours : Échap, ou un second clic sur « → » (décisions utilisateur du 23/09).
+Le retrait d'un lien existant vers un
+voisin reste possible. `run_task_command` passe par `shell=True` : les uuid
+reçus doivent être validés par expression régulière stricte avant d'entrer
+dans la commande.
+
+### H3. Éditer une tâche depuis le graphe (demandé le 23/09)
+
+Un bouton « stylo » sur chaque nœud, comme sur les taskcards, ouvre la modale
+d'édition existante (`task-editor.js`) ; à l'enregistrement, le graphe se
+redessine. À faire **avant H2** : il pose l'infrastructure de clic sur un nœud
+(distinguer un clic d'un glisser de `svg-pan-zoom`) dont H2 a besoin.
 
 ---
 

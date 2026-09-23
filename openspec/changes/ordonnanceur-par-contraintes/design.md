@@ -128,6 +128,59 @@ Elle produit, par contexte et par jour, la liste des créneaux libres en indices
 **Règle de la marge** : la marge est un *volume* réservé, pas une plage. On retire
 `marge_jour` du total disponible du jour ; on ne fige pas *quand*.
 
+### Deux calendriers (décision du 23/09/2026)
+
+| Source | Contenu | Accès |
+|---|---|---|
+| **Outlook** | calendrier **pro** | PowerShell + Outlook COM, sur le PC pro (`outils/extraire-outlook.ps1`) |
+| **Nextcloud** | calendrier **perso** | CalDAV (bibliothèque `caldav`, déjà utilisée par `TWsched_task_to_caldav.py`) |
+
+Les deux sont à brancher. Aujourd'hui, seul Outlook est lu, et un seul de ses
+calendriers.
+
+### Les réunions deviennent des tâches `+meeting` (décision du 23/09/2026)
+
+L'import se fait en tâches Taskwarrior `+meeting +fige`, avec `scheduled` et
+`estTime`. Le solveur les lit alors comme des tâches figées, un mécanisme qui
+existe déjà. **L'argument décisif est Timewarrior** : le hook `on-modify`
+déclenche Timewarrior sur `task start` avec les tags de la tâche, donc le temps
+d'une réunion se range seul sous `+meeting`. Avec un fichier `reunions.json`
+lu directement, il faudrait lancer `timew start` à la main, sans lien avec la
+tâche. Second usage : poser un `depends` sur une réunion (préparer un dossier
+pour une réunion, et que ça suive si elle se déplace).
+
+Règles arrêtées :
+
+- **idempotence sur `entryId` + date de début de l'occurrence, jamais sur
+  `entryId` seul** : mesuré, l'`entryId` d'Outlook appartient à la *série*
+  (18 occurrences, 6 identifiants) ;
+- un événement `Free` n'occupe pas : mesuré, 6 sur 18 le sont ;
+- la passe de ménage des réunions passées
+  (`task +meeting scheduled.before:now status:pending done`) s'écrit **en même
+  temps** que l'import, pas plus tard ;
+- **tout import réel est lancé par l'utilisateur lui-même.**
+
+Reste à trancher : la pollution des vues de tâches normales par des dizaines de
+réunions (un filtre `-meeting` dans les rapports par défaut ?).
+
+### Régimes de période — en suspens
+
+Une période ne fait pas qu'occuper : elle change le régime de chaque contexte.
+Cas recensés par l'utilisateur (23/09), à préciser par lui avant toute
+conception :
+
+| Régime | Ce qui est planifiable |
+|---|---|
+| semaine normale | tout, selon les grilles |
+| vacances (semaine) | pas de pro ; le reste : à valider |
+| week-end « vacances » | pas comme d'habitude : pas de projet perso, sport éventuellement |
+| week-end sportif | pas de projet perso, sport oui |
+| trajet en voiture | **rien** (il conduit) |
+| trajet en train | certaines choses seulement |
+
+Défaut connu en attendant : une absence lue dans Outlook vide *tous* les
+contextes, sport et perso compris.
+
 ---
 
 ## 4. Le tampon de sécurité

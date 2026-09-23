@@ -9,7 +9,7 @@ Il ne remplace pas `openspec/changes/ordonnanceur-par-contraintes/tasks.md`, qui
 décrit les lots 0 à 8 tels qu'ils ont été spécifiés au départ. Il recense ce qui
 est apparu **depuis**, ou ce que ces lots ont laissé ouvert.
 
-Dernière mise à jour : 2026-09-23 (matin).
+Dernière mise à jour : 2026-09-23 (soir).
 
 Ce carnet couvre **les deux dépôts** : `TaskWarriorPlanner` et
 `WebTaskManager`. Une seule liste, pour ne pas la perdre en deux moitiés.
@@ -84,6 +84,8 @@ réellement exécuté, ce point prime sur le reste.
 
 ### A4. Réserve de capacité pour le travail non daté
 
+> **Mis de côté le 23/09** (décision utilisateur) : à revoir à l'usage.
+
 Sans elle, une tâche sans échéance a une urgence faible et se fait repousser
 indéfiniment. **Le calcul d'urgence de Taskwarrior ne doit pas être touché** :
 c'est un empilement de coefficients, le régler à tâtons pour corriger un problème
@@ -97,7 +99,10 @@ capacité ne leur est réservée**. La correction est une contrainte dans la pas
 Le mécanisme de planification sans date reste tel quel en attendant (décision
 utilisateur du 22/09).
 
-### A5. Consigner la décision `assignee`
+### ~~A5.~~ FAIT — Consigner la décision `assignee`
+
+> Déjà écrit dans `design.md` §1 (commit `8c51258`) : `+externe` dit si la
+> tâche consomme ma capacité, un second tag nomme l'acteur si nécessaire.
 
 Pas de champ `assignee` : le solveur n'a besoin que de savoir si une tâche
 consomme de la capacité, et `+externe` y répond. L'acteur se note **en tag** :
@@ -137,6 +142,9 @@ de la passe 2 doit, lui, garder une marge — et laquelle. Deux objets différen
 à ne pas re-mélanger.
 
 ### B4. La cible de performance : un arbitrage produit, pas technique
+
+> **Penchant du 23/09 : (a)**, accepter un plan non prouvé optimal. À confirmer
+> par l'utilisateur après ses essais réels.
 
 100 tâches en moins de 30 s : mesuré 60,8 s, statut `FEASIBLE` au lieu
 d'`OPTIMAL`. Le mur est identifié — c'est la preuve d'optimalité de la passe 2,
@@ -264,7 +272,7 @@ nettoyage des données reste à faire.
 Les commandes `task ... modify project:...` peuvent être préparées ici ;
 **l'utilisateur les lance lui-même sur sa base.**
 
-### C3. Rien n'est poussé
+### ~~C3.~~ Poussé le 23/09 (autorisation explicite de l'utilisateur)
 
 Le dépôt est en avance sur `origin/main` et rien n'a jamais été poussé. C'est une
 décision utilisateur, jamais prise à sa place.
@@ -347,6 +355,12 @@ E1 et E2 suffisent pour commencer à s'en servir. E3 et E4 ferment la boucle.
 ---
 
 ## F. Les deux calendriers, et les régimes de capacité
+
+> **Tranché le 23/09** : Outlook = **pro**, Nextcloud = **perso**, les deux à
+> brancher. Réunions importées en tâches `+meeting` (C1, Timewarrior). Les
+> régimes de période (F2) restent **en suspens** : l'utilisateur a recensé les
+> cas (semaine normale, vacances, week-end vacances, week-end sportif, trajet
+> voiture, trajet train) et doit préciser chacun. Tout est dans `design.md` §3.
 
 Ajouté le 23/09.
 

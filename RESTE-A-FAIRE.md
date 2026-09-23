@@ -524,6 +524,13 @@ base de test : 16 nœuds, 13 flèches, 5 cadres, conformes.
 glisser), cadres imbriqués par sous-projet, le projet demandé sans cadre propre,
 même marge entre le cadre et la nav, le bas et les côtés.
 
+> **H2 et H3 sont faits** (WebTaskManager `69cdd34`, `ee0eb9c`, `7c489f2`),
+> vérifiés par mutation et par un essai de bout en bout sur la base de test.
+> Leçon à retenir : un contrat Playwright qui simule le serveur peut se
+> tromper de forme de réponse (`error` au lieu du `detail` de FastAPI) et
+> rester vert pendant que l'interface échoue contre le vrai serveur. D'où
+> l'essai réel avant chaque commit d'une fonction qui écrit dans la base.
+
 ### H2. Éditer les dépendances depuis le graphe (demandé le 23/09)
 
 Le graphe devient **l'interface de création des dépendances**. Geste voulu : on

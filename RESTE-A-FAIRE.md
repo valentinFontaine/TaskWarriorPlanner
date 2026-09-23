@@ -9,7 +9,7 @@ Il ne remplace pas `openspec/changes/ordonnanceur-par-contraintes/tasks.md`, qui
 décrit les lots 0 à 8 tels qu'ils ont été spécifiés au départ. Il recense ce qui
 est apparu **depuis**, ou ce que ces lots ont laissé ouvert.
 
-Dernière mise à jour : 2026-09-22, après le run de nuit.
+Dernière mise à jour : 2026-09-23.
 
 ---
 
@@ -204,7 +204,28 @@ possibles, discutées le 22/09 :
 3. calendar-planner est abandonné, CalDAV affiche tout — le moins cher en
    maintenance, mais on perd le kanban et l'édition rapide.
 
-Avis donné : **1 maintenant, 3 comme horizon, jamais 2.**
+Avis **corrigé le 23/09** : **1**, et rien d'autre. CalDAV est un *protocole de
+synchronisation*, pas une interface : le client serait Nextcloud, Thunderbird ou
+un téléphone, et surtout **aucun d'eux ne sait renvoyer quoi que ce soit à
+Taskwarrior**. On y perdrait la planification manuelle et l'ajustement, c'est-à-
+dire exactement ce qu'on veut garder. L'option 3 n'est pas un horizon : c'est au
+mieux un satellite en lecture seule pour le téléphone. Calendar-planner reste
+l'endroit où l'on ajuste.
+
+**Timewarrior fait repencher la balance vers les tâches Taskwarrior** (point
+soulevé le 23/09). Le hook `on-modify` déclenche Timewarrior sur `task start`
+avec les tags de la tâche : une réunion-tâche donne `task <réunion> start` et le
+temps se range seul sous `+meeting`. Avec un fichier, il faut `timew start` à la
+main, sans lien. Avec l'argument `depends` (préparer un dossier pour une
+réunion, et que ça suive si elle se déplace), l'option A a désormais **deux
+usages réels** que le fichier ne sert pas.
+
+Si on y va, le chemin est : extraction → `reunions.json` → **import** vers
+Taskwarrior en `+meeting +fige` avec `scheduled` + `estTime`. Le solveur les lit
+alors comme des tâches figées, mécanisme qui existe déjà. Idempotence sur
+`entryId + date de début`, **jamais sur `entryId` seul**. Et la passe de ménage
+(`task +meeting scheduled.before:now status:pending done`) est à écrire en même
+temps, pas plus tard.
 
 L'ancienne conception « une réunion = une tâche Taskwarrior `+meeting` » n'est
 plus nécessaire pour le calcul. Si elle revient, ce sera pour l'affichage ou
@@ -220,6 +241,14 @@ réimporter deux fois la même réunion) et la pollution des vues de tâches
 normales par des dizaines de réunions.
 
 **Tout import réel est lancé par l'utilisateur lui-même.**
+
+### C1bis. Outlook — ce qui n'est pas fait
+
+- **Aucune détection de changement.** L'extraction est un instantané complet ;
+  si une réunion se déplace, rien ne le signale et rien n'en tire de
+  conséquence sur le plan. Non prioritaire (décision du 23/09), mais à savoir.
+- Un seul calendrier (le calendrier par défaut), une seule fenêtre glissante,
+  et l'extraction est manuelle.
 
 ### C2. Nettoyage de la casse des projets
 
@@ -274,3 +303,39 @@ décision utilisateur, jamais prise à sa place.
 - **Le régime « au plus tard » n'a jamais tourné de bout en bout sur les données
   réelles.** `echeances.json` porte enfin deux dates ; tant que A1 n'est pas
   fait, elles ne touchent presque rien.
+
+
+---
+
+## E. La boucle d'usage — ce qui manque pour s'en servir vraiment
+
+Demandé le 23/09, et c'est ce qui transforme le projet en outil :
+
+> lancer le programme depuis l'interface, voir le dry-run dans le calendrier,
+> faire mes ajustements dessus, et valider ensuite pour créer vraiment.
+
+**Ce qui existe déjà**, et qui est plus que prévu :
+
+- `python -m planif` produit `plan.json` ;
+- `calendar-planner.js` **lit déjà `/plan.json`** (lot 9, commit `07fa503`) :
+  le plan est donc affichable sans rien écrire dans la base ;
+- `--ecrire-scheduled` et `--ecrire-due` écrivent, et seulement sur demande ;
+- `dry_run` existe dans les deux fonctions d'écriture.
+
+**Ce qui manque**, dans l'ordre où ça se construit :
+
+1. **E1 — lancer le calcul depuis l'interface.** Un endpoint dans
+   `main_fastapi.py` qui exécute le planificateur et régénère `plan.json`, plus
+   un bouton. Sans écriture dans la base : c'est le dry-run.
+2. **E2 — distinguer à l'écran le proposé du réel.** Le calendrier affiche
+   aujourd'hui `task scheduled.not: export` (le réel) *et* `/plan.json` (le
+   proposé). Tant qu'on ne les distingue pas visuellement, on ne sait pas ce
+   qu'on regarde.
+3. **E3 — ajuster.** Déplacer un bloc dans la vue et que l'ajustement tienne :
+   soit en épinglant la tâche (`+fige` + `scheduled`), soit en posant un `due`
+   humain — qui, lui, survit à la replanification (voir A2).
+4. **E4 — valider.** Un bouton qui lance l'écriture réelle
+   (`--ecrire-scheduled --ecrire-due`) et rend le compte rendu
+   `modifiees / inchangees / ignorees` que les deux fonctions produisent déjà.
+
+E1 et E2 suffisent pour commencer à s'en servir. E3 et E4 ferment la boucle.

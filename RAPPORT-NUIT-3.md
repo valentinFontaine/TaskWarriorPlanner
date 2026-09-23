@@ -29,6 +29,18 @@ Aucun à ce stade.
   refait avec un agenda construit : réunion de 06:00 à 22:00 posée sur le jour où
   le témoin (agenda vide) place le plus de blocs.
 
+- Étape 2 : « la `due` que la passe 1 calcule pour elle, ou `null` » est lu
+  ainsi : tâche ayant au moins un bloc non opportuniste → `dues_calculees`
+  (fin du dernier bloc, ce que `--ecrire-due` écrit) ; tâche de passe 2 → `null`.
+  Écart assumé avec `--ecrire-due` existant, qui écrit aussi une `due` sur les
+  tâches de passe 2 : la fin d'un placement « au plus tôt » n'est pas une date
+  limite. Les `+externe` portent leur valeur (information) ; c'est l'écriture qui
+  les ignore. `version` reste 1 (champ ajouté, compatible).
+- Étape 2 : la lecture tolérante de `calendar-planner.js` est vérifiée par un test
+  Playwright (`tests/plan-valider.spec.js`, bloc « Étape 2 ») : un plan dont les
+  tâches portent `due` s'affiche. Vert avant toute modification d'A
+  (`planEstValide` ne contrôle que `version` et `taches`).
+
 ## 3. Mesures
 
 | Suite | Départ | Arrivée |
@@ -63,6 +75,16 @@ Restauration contrôlée par SHA-256 à chaque mutation : identique.
 | avec réunion 06:00-22:00 le 26/09 : blocs à l'heure dedans | **0** (15 blocs à l'heure au total) |
 | tâches dont `modified` a changé pendant le calcul | **0** |
 
+### Étape 2 — mutations (`tests/test_nuit3_plan_due.py`, 7 tests)
+
+| Mutation | Résultat |
+|---|---|
+| M8 `due` toujours `null` | 5 failed |
+| M9 passe 2 non distinguée (`due` partout) | 3 failed |
+| M10 `due` = début du premier bloc | 5 failed |
+
+Hash restauré identique à chaque fois.
+
 ## 4. Frictions
 
 Voir `INVENTAIRE-NUIT-3.md`, « Écarts et faits notés ».
@@ -72,4 +94,5 @@ Voir `INVENTAIRE-NUIT-3.md`, « Écarts et faits notés ».
 | Étape | État | Commit |
 |---|---|---|
 | 0 inventaire | fait | B `6334ef6` |
-| 1 chemins | fait | voir ci-dessous |
+| 1 chemins | fait | B `88428d4`, A `be7fc84` |
+| 2 due dans plan.json | fait | B (ce commit) |

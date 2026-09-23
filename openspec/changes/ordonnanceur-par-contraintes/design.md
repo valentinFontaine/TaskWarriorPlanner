@@ -324,6 +324,7 @@ elle ne connaît ni `ortools`, ni les grilles, ni `t0`, ni la notion de créneau
       "projet": "NPD.helisides",
       "debut": "2026-11-20T14:00:00",
       "fin": "2026-11-20T17:00:00",
+      "due": "2026-11-20T17:00:00",
       "blocs": [
         {"indice": 0, "debut": "2026-11-20T14:00:00", "fin": "2026-11-20T16:00:00",
          "externe": false, "agrege": false, "opportuniste": false, "precision": "heure"},
@@ -362,6 +363,13 @@ Les règles, dans l'ordre d'importance :
 6. **`version` est un entier**, à incrémenter dès que le format change de façon
    incompatible, pour que l'interface puisse refuser ce qu'elle ne sait pas lire
    plutôt que de l'interpréter de travers.
+7. **`due` est la fin du dernier bloc** de la tâche — exactement ce que
+   `ecrire_due` écrirait dans Taskwarrior, sans recalcul. Elle vaut `null` pour
+   une tâche placée uniquement par la passe 2 (§5) : ce travail non daté n'a pas
+   de date limite, la passe 1 n'a rien calculé pour lui. Le champ a été ajouté
+   de façon compatible — `version` reste donc à 1 — et il existe pour que
+   Valider (`proposal.md` E4, `--appliquer`) écrive dans Taskwarrior exactement
+   le plan affiché, sans le recalculer une seconde fois.
 
 ### L'écriture de `scheduled:` dans Taskwarrior
 

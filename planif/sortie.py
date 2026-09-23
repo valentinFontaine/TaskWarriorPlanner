@@ -94,9 +94,19 @@ def plan_en_dict(plan, taches=None):
     *d'ou vient* le bloc, la precision dit *ce qu'on peut en faire*. C'est la
     seconde qui interesse un afficheur, et la rendre explicite evite qu'il
     invente la regle de conversion.
+
+    Chaque tache porte aussi une `due` : c'est exactement ce que `ecrire_due`
+    ecrirait, sans recalcul, pour que Valider (E4, `--appliquer`) applique le
+    plan affiche et rien d'autre. Une tache placee par la **passe 1** (au moins
+    un bloc non opportuniste) porte la valeur de
+    `planif.dues.dues_calculees` -- la fin de son dernier bloc -- en ISO local
+    naif ; une tache placee uniquement par la **passe 2** (tous ses blocs
+    opportunistes) porte `None`. Le champ est toujours present, que `taches`
+    soit fourni ou non : il ne depend que du plan.
     """
     par_uuid = {t.uuid: t for t in (taches or [])}
     taches_json = {}
+    dues = dues_calculees(plan, taches or [])
 
     for bloc in plan.blocs:
         entree = taches_json.setdefault(bloc.uuid, {"blocs": []})
@@ -114,6 +124,8 @@ def plan_en_dict(plan, taches=None):
         entree["blocs"].sort(key=lambda b: (b["debut"], b["indice"]))
         entree["debut"] = entree["blocs"][0]["debut"]
         entree["fin"] = max(b["fin"] for b in entree["blocs"])
+        placee_par_passe_1 = any(not b["opportuniste"] for b in entree["blocs"])
+        entree["due"] = dues[uuid].isoformat() if placee_par_passe_1 else None
         tache = par_uuid.get(uuid)
         if tache is not None:
             if tache.description:

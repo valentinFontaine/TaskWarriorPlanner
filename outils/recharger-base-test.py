@@ -14,8 +14,9 @@ data/.jetable (sinon le script refuse, sans rien modifier) ; dans ce cas la
 base est effacee puis resemee a l'identique.
 
 A la fin, le script ecrit DIR/config.json et DIR/echeances.json (le contenu
-config/echeances du jeu de donnees), et affiche le nombre de taches semees
-ainsi que la commande PowerShell pour pointer Taskwarrior sur ce taskrc.
+config/echeances du jeu de donnees) et DIR/reunions.json (agenda vide : `[]`),
+et affiche le nombre de taches semees ainsi que la commande PowerShell pour
+pointer Taskwarrior sur ce taskrc.
 """
 import argparse
 import json
@@ -93,6 +94,9 @@ def recharger(dossier):
     )
     (dossier / "echeances.json").write_text(
         json.dumps(base.echeances, ensure_ascii=False), encoding="utf-8",
+    )
+    (dossier / "reunions.json").write_text(
+        json.dumps([], ensure_ascii=False), encoding="utf-8",
     )
 
     return base, taskrc

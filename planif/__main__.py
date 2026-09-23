@@ -2,6 +2,13 @@
 
 Usage : ``./venv/Scripts/python.exe -m planif [options]``.
 
+``--config``, ``--echeances`` et ``--reunions`` permettent de viser des chemins
+explicites (par exemple une base de test) au lieu des defauts (``config.json``
+et ``echeances.json`` a cote du paquet, ``reunions.json`` du repertoire
+courant). Un chemin explicite absent est une erreur, avant tout calcul et
+avant toute ecriture de plan ; sans option, les fichiers restent optionnels
+comme avant.
+
 Deroule (BRIEF-LOT-A.md) :
 
 1. configuration + echeances de projet (``echeances.json``, optionnel) ;
@@ -106,6 +113,16 @@ def construire_analyseur():
                                 "l'avance n'a aucun sens.")
     analyseur.add_argument("--filtre", default="status:pending", metavar="EXPR",
                            help="filtre Taskwarrior (defaut : status:pending)")
+    analyseur.add_argument("--config", default=None, metavar="CHEMIN",
+                           help="chemin de config.json (defaut : celui de "
+                                "planif.config, a cote du paquet)")
+    analyseur.add_argument("--echeances", default=None, metavar="CHEMIN",
+                           help="chemin de echeances.json (defaut : celui de "
+                                "planif.config, a cote du paquet ; fichier "
+                                "optionnel)")
+    analyseur.add_argument("--reunions", default=None, metavar="CHEMIN",
+                           help="chemin de l'agenda (defaut : reunions.json du "
+                                "repertoire courant ; fichier optionnel)")
     analyseur.add_argument("-v", action="store_true", dest="verbeux",
                            help="passe le journal a INFO (planif.solveur compris)")
     return analyseur
@@ -293,12 +310,21 @@ def main(argv=None):
     analyseur = construire_analyseur()
     args = analyseur.parse_args(argv)
 
+    # --- garde-fou : un chemin EXPLICITE absent est une erreur, pas un fichier
+    # optionnel (contrairement au defaut d'echeances/reunions). Avant tout
+    # calcul et avant toute ecriture de plan.
+    for option, chemin in (("--config", args.config),
+                           ("--echeances", args.echeances),
+                           ("--reunions", args.reunions)):
+        if chemin is not None and not Path(chemin).exists():
+            analyseur.error("{} : fichier introuvable : {}".format(option, chemin))
+
     if args.verbeux:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     # --- 1. configuration + echeances de projet -----------------------------
-    echeances_projet = charger_echeances()
-    config = charger_config(echeances_projet=echeances_projet)
+    echeances_projet = charger_echeances(chemin=args.echeances)
+    config = charger_config(chemin=args.config, echeances_projet=echeances_projet)
     print("{} echeance(s) de projet chargee(s).".format(len(echeances_projet)))
 
     # --- 2. taches status:pending (ou --filtre) ------------------------------
@@ -334,7 +360,7 @@ def main(argv=None):
                               if args.horizon_detaille is not None
                               else config.horizon_detaille.days)
     horizon_detaille_fin = t0 + timedelta(days=horizon_detaille_jours)
-    reunions = charger_reunions(t0, horizon_fin)
+    reunions = charger_reunions(t0, horizon_fin, source=args.reunions)
 
     taches_datees = [t for t in taches if t.due is not None]
     taches_non_datees = [t for t in taches if t.due is None]

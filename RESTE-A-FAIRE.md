@@ -410,6 +410,76 @@ correspond à une situation qui arrive vraiment.
 - le régime **sans aucune dépendance** — déjà couvert depuis le 23/09 ;
 - des délais `+externe` intercalés dans les chaînes.
 
+### G1bis. Comment une base reconstruite chaque jour donne des résultats stables
+
+Décidé le 23/09 (après-midi), après une première proposition écartée.
+
+**Écarté : un drapeau `--maintenant`** qui ferait croire au planificateur qu'on
+est lundi. Taskwarrior, lui, ne se laisse pas injecter l'heure : il calcule
+l'urgence (âge, proximité de `due`, `scheduled < now`) sur la vraie horloge
+(`planif/taskwarrior.py:118` la lit telle quelle). Dissocier les deux horloges
+créait le problème au lieu de le résoudre.
+
+**Retenu :**
+
+1. **Une seule horloge, la vraie**, pour le planificateur et pour Taskwarrior.
+   Toute date de la base est relative à aujourd'hui, donc l'âge d'une tâche et
+   la distance à son échéance sont les mêmes quel que soit le jour du lancement.
+2. **Dates de création variées** : quelques tâches à plus d'un an (terme d'âge
+   saturé), les autres récentes. C'est réaliste et stable, puisque l'âge est
+   relatif.
+3. **UUID dérivés du nom de la tâche** (`uuid5`). Nécessaires pour écrire les
+   `depends` dans le JSON d'import ; ils suppriment en plus une source d'aléa
+   possible dans le départage des égalités (non vérifiée).
+4. **Échéances en « N-ième vendredi (ou lundi) à venir »**, pas en « dans N
+   jours » : elles tombent toujours le même jour de la semaine. La distance
+   varie alors de 0 à 6 jours selon le jour du lancement, d'où :
+5. **Une règle de marge, vérifiée statiquement** (sans solveur, pour les 7 jours
+   de lancement possibles) : aucun verdict ne doit tenir à une semaine de
+   capacité près. Chaque scénario est largement faisable, ou franchement
+   infaisable.
+6. **Les tests vérifient des propriétés tirées de la spécification, jamais des
+   dates.** Un ordre entre deux tâches n'est vérifié que si leur écart
+   d'urgence dépasse ce que le terme `due` peut faire bouger en une semaine.
+7. **Les tests commencent par effacer la base et recréer les tâches.** Hors
+   pytest, l'effacement de la base de dev n'a lieu que si son dossier de données
+   contient un fichier témoin `.jetable`.
+
+Scénarios retenus (chacun correspond à une situation réelle) :
+
+| # | Situation | Structure |
+|---|---|---|
+| S1 | deux livrables pour la même revue | 2 projets, même échéance ; chaîne longue avec `+externe` contre 6 tâches courtes indépendantes |
+| S2 | projet façon Heliside.US | 3 niveaux (`.plans`, `.achats`, `.essais`), échéance sur la racine |
+| S3 | montage prototype | convergence : dépend de plans + pièces (`+externe`) + moteur (`+externe`) |
+| S4 | revue de conception validée | divergence : débloque 3 plans de détail + note de calcul |
+| S5 | losange entre sous-projets | A → (B `.plans`, C `.achats`) → D |
+| S6 | circuit d'achat | devis `+externe +serviceAchat` → commande → fabrication `+externe` → contrôle |
+| S7 | travail non daté | pro, perso, sport, sans dépendance |
+| S8 | échéance perso | autre contexte, ne doit pas manger la capacité pro |
+| S9 | créneau imposé | une tâche `+fige` dans deux jours |
+
+Le projet infaisable (échéance intenable) est une **variante à part**, hors de
+la base principale.
+
+**Fait (23/09)** : `tests/base_realiste.py` (générateur, 50 tâches) et son
+contrat `tests/test_base_realiste.py` (42 tests, statiques sauf le semis),
+vérifié par 12 mutations. Deux défauts trouvés en route : l'effacement visait
+les `*.data` de Taskwarrior 2 et n'effaçait rien (masqué par les uuid fixes :
+réimporter écrase les mêmes tâches) ; et le refus sans `.jetable` n'était
+testé que sur une base vide, où un effacement prématuré est invisible.
+
+**Reste ouvert :**
+
+- **Les tests de comportement avec solveur** (propriétés par scénario :
+  convergence, externe hors capacité, chaîne longue d'abord, propagation).
+- **Le script de semis de la base de dev** (`taskwarrior-dev`), pour Playwright
+  et pour H — `semer` existe déjà, il manque l'appel et le fichier `.jetable`.
+- **La base est détendue.** La règle de marge a forcé les échéances du 7e au 12e
+  vendredi à venir : aucun scénario ne met le solveur sous tension, alors que la
+  base réelle l'est. Une variante « tendue » est à prévoir à côté de la
+  variante infaisable.
+
 ### G2. Le nettoyage de la vraie base
 
 Séparé, et c'est du travail utilisateur : renommages de projets, `estTime`

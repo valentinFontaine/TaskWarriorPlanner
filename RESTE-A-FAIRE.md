@@ -473,8 +473,16 @@ testé que sur une base vide, où un effacement prématuré est invisible.
 
 - **Les tests de comportement avec solveur** (propriétés par scénario :
   convergence, externe hors capacité, chaîne longue d'abord, propagation).
-- **Le script de semis de la base de dev** (`taskwarrior-dev`), pour Playwright
-  et pour H — `semer` existe déjà, il manque l'appel et le fichier `.jetable`.
+- ~~Le script de semis~~ **fait** (`bcb8437`) : `outils/recharger-base-test.py`
+  recharge une base **dédiée**, `C:/Users/irpaui/taskwarrior-test`, distincte
+  de `taskwarrior-dev` (entretenue à la main, non touchée). Pour s'en servir :
+  `$env:TASKRC='C:\Users\irpaui\taskwarrior-test\taskrc'`.
+- **Le planificateur ne sait pas encore tourner sur cette base** : il lit
+  `config.json` et `echeances.json` à côté du paquet, et `reunions.json` dans
+  le répertoire courant (`planif/__main__.py:300`, `planif/reunions.py:50`),
+  sans option pour les désigner. Le script écrit déjà les deux premiers dans
+  `taskwarrior-test/` ; il manque les options côté planificateur et côté
+  `plan_runner.py`.
 - **La base est détendue.** La règle de marge a forcé les échéances du 7e au 12e
   vendredi à venir : aucun scénario ne met le solveur sous tension, alors que la
   base réelle l'est. Une variante « tendue » est à prévoir à côté de la
@@ -505,6 +513,17 @@ répondent à trois questions différentes :
 Le graphe ne dépend de rien : il se dessine tout de suite, et c'est justement
 l'outil pour **vérifier** qu'une base — de test ou réelle — est bien construite,
 avant même de planifier. Le Gantt vient après, quand il y a un plan à montrer.
+
+**Fait (23/09, WebTaskManager `2efa2f8`)** : `GET /api/graphe?projet=X` et
+`graphe.html` (Mermaid 10 par CDN, un cadre par sous-projet, externes / figées /
+hors projet distinguées), projet choisi dans le filtre de `nav.js`. Endpoint
+vérifié par 10 mutations ; la page, non. Vérifié à l'œil sur NPD.Orion de la
+base de test : 16 nœuds, 13 flèches, 5 cadres, conformes.
+
+**Ouvert — lisibilité, à trancher par l'utilisateur** : le SVG (2018 px de
+large) est réduit à la largeur de la page, le texte tombe à ~9 px. Options :
+défilement horizontal à taille réelle, orientation haut-bas, ou taille réelle
+avec zoom.
 
 ---
 

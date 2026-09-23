@@ -351,6 +351,21 @@ Demandé le 23/09, et c'est ce qui transforme le projet en outil :
 
 E1 et E2 suffisent pour commencer à s'en servir. E3 et E4 ferment la boucle.
 
+**E1 et E2 sont faits** (`dde8a1a`, `2ec9f9c`). **Décisions pour E3 et E4 (23/09)** :
+
+- E3 : déplacer un bloc proposé **écrit tout de suite** `+fige` et `scheduled`
+  (choix de l'utilisateur, contre la recommandation de tout garder jusqu'à
+  Valider), puis relance un calcul sans écriture pour que le plan affiché
+  intègre l'ajustement ;
+- E4 : une tâche déplacée à la main reste `+fige` ; Valider écrit **exactement
+  le plan affiché**, sans recalcul, et refuse si la base a changé depuis le
+  calcul (empreinte `uuid|modified`).
+
+Faits mesurés qui en découlent : `plan.json` ne porte pas les `due` (à
+ajouter) ; `PUT /api/task/{id}/modify` efface les tags avant de les réécrire
+(ne pas s'en servir pour figer) ; `+fige` n'impose que le début du bloc 0, donc
+seul ce bloc est déplaçable. Run de nuit n°3 préparé : `PROMPT-NUIT-3.md`.
+
 
 ---
 

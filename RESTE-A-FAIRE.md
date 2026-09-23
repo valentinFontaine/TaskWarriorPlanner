@@ -9,7 +9,10 @@ Il ne remplace pas `openspec/changes/ordonnanceur-par-contraintes/tasks.md`, qui
 décrit les lots 0 à 8 tels qu'ils ont été spécifiés au départ. Il recense ce qui
 est apparu **depuis**, ou ce que ces lots ont laissé ouvert.
 
-Dernière mise à jour : 2026-09-23.
+Dernière mise à jour : 2026-09-23 (matin).
+
+Ce carnet couvre **les deux dépôts** : `TaskWarriorPlanner` et
+`WebTaskManager`. Une seule liste, pour ne pas la perdre en deux moitiés.
 
 ---
 
@@ -339,3 +342,147 @@ Demandé le 23/09, et c'est ce qui transforme le projet en outil :
    `modifiees / inchangees / ignorees` que les deux fonctions produisent déjà.
 
 E1 et E2 suffisent pour commencer à s'en servir. E3 et E4 ferment la boucle.
+
+
+---
+
+## F. Les deux calendriers, et les régimes de capacité
+
+Ajouté le 23/09.
+
+### F1. Deux sources, pas une
+
+- **Outlook** — *hypothèse à confirmer : c'est le calendrier **pro***. Le compte
+  lu (`…@miltonroy.com`) contenait bien des réunions de travail. L'utilisateur a
+  écrit « Outlook est le calendrier perso », ce qui contredit la mesure : à
+  trancher avant d'écrire quoi que ce soit.
+- **Nextcloud** (sur le téléphone) — les informations personnelles. Accès par
+  CalDAV, la bibliothèque `caldav` est déjà utilisée par
+  `TWsched_task_to_caldav.py` : rien de nouveau à installer.
+
+L'extraction actuelle ne connaît qu'Outlook et un seul calendrier.
+
+### F2. Les périodes ne font pas qu'occuper : elles changent le régime
+
+C'est un **manque de modèle**, pas un réglage. Aujourd'hui une période se
+soustrait comme un intervalle, uniformément. Or ce que l'utilisateur décrit est
+autre chose :
+
+| Période | Effet voulu |
+|---|---|
+| vacances | contexte `pro` à **zéro**, les autres contextes intacts |
+| week-end en vacances | `sport` plafonné à 30 min, pas supprimé |
+
+Deux conséquences immédiates :
+
+1. **Un défaut actuel.** L'absence de 5 jours lue dans Outlook vide *toutes* les
+   journées, **tous contextes confondus** — donc aussi `perso`, `sport`,
+   `couture`. En vacances, on peut faire du sport. Le comportement est faux,
+   et il n'est faux que depuis qu'on lit vraiment l'agenda.
+2. **Le modèle doit accepter une modulation par (période × contexte)** : mettre
+   à zéro, plafonner, ou laisser tel quel. `Contexte.marge_jour` est global et
+   ne sait pas faire ça.
+
+Question ouverte : ces régimes se déduisent-ils des calendriers (un événement
+« vacances » en journée entière) ou se déclarent-ils dans un fichier, comme
+`echeances.json` ? La déduction est fragile (elle dépend de la façon dont
+l'événement est nommé) ; la déclaration est fiable mais manuelle.
+
+---
+
+## G. Une base de test réaliste — et l'abandon de la base actuelle
+
+Décision du 23/09 : **on arrête de se servir de la base réelle comme référence.**
+Elle est trop périmée pour qu'on en tire une conclusion — `estTime` manquante sur
+81 tâches, classement par projet incohérent (casse, doublons), 53 échéances déjà
+dépassées. Toute mesure faite dessus mesure surtout sa dette.
+
+### G1. Ce que la base de test doit contenir
+
+Pas un jeu minimal : un jeu **qui ressemble au réel**, et dont chaque cas
+correspond à une situation qui arrive vraiment.
+
+- plusieurs projets portant **la même échéance**, mais des chaînes de
+  dépendances différentes — c'est le cas qui met les contextes en concurrence ;
+- des projets à **plusieurs niveaux** de dépendance ;
+- des **dépendances multiples** : une tâche qui dépend de plusieurs, et une
+  tâche dont plusieurs dépendent (convergence et divergence) ;
+- le régime **sans aucune dépendance** — déjà couvert depuis le 23/09 ;
+- des délais `+externe` intercalés dans les chaînes.
+
+### G2. Le nettoyage de la vraie base
+
+Séparé, et c'est du travail utilisateur : renommages de projets, `estTime`
+manquantes, échéances dépassées, nouveaux projets. Les commandes `task` peuvent
+être préparées ici ; **c'est lui qui les lance.**
+
+---
+
+## H. Voir les dépendances
+
+Demandé le 23/09, avec la bonne question : *le Gantt est-il le bon outil, sachant
+qu'il faut le planning d'abord ?*
+
+**Non, pas en premier — et c'est une bonne nouvelle.** Trois représentations
+répondent à trois questions différentes :
+
+| Vue | Ce qu'elle montre | A-t-elle besoin du plan ? |
+|---|---|---|
+| **graphe (DAG)** | la structure : qui dépend de qui | **non** |
+| **Gantt** | le temps : quand chaque chose tombe | oui |
+| **chemin critique** | ce qui commande la date de fin | non, seulement les durées |
+
+Le graphe ne dépend de rien : il se dessine tout de suite, et c'est justement
+l'outil pour **vérifier** qu'une base — de test ou réelle — est bien construite,
+avant même de planifier. Le Gantt vient après, quand il y a un plan à montrer.
+
+---
+
+## Priorité proposée
+
+1. **E1 + E2** — voir le plan à l'écran sans toucher la base. Le plus court
+   chemin vers un usage réel, et `plan.json` est déjà lu par le calendrier.
+2. **G1** — la base de test réaliste. Prérequis pour croire quoi que ce soit de
+   ce qui suit, et l'utilisateur a explicitement retiré sa confiance à la base
+   actuelle.
+3. **H — le graphe de dépendances.** Ne dépend d'aucun plan, et sert
+   immédiatement à valider G1.
+4. **E3 + E4** — ajuster et valider : la boucle se ferme.
+5. **I — les sous-tâches** (ci-dessous), qui a besoin de G1 pour être testée.
+6. **F** — les deux calendriers et les régimes de capacité.
+7. **G2** — le nettoyage de la vraie base, quand le reste est sûr.
+
+---
+
+## I. Les sous-tâches
+
+Le besoin, dans les termes de l'utilisateur : en avant-projet il alloue du temps
+à « faire les plans de détails » sans connaître les pièces. En exécution il veut
+la découper en « faire plan APM-XX-00302 », « …00303 », etc. — **mais ses chefs
+ne doivent voir que « Faire les plans de détails ».**
+
+Taskwarrior n'a pas de hiérarchie de tâches. `depends` est un ordre, pas une
+appartenance. Deux façons de la simuler :
+
+**a. Un sous-projet** `NPD.Heliside.US.plansDetails`, avec un libellé attaché au
+projet. Avantages : `task project:…plansDetails` marche nativement,
+`task project:NPD.Heliside.US` les inclut, et **la propagation d'échéance (A1)
+les couvre déjà**. Il manque seulement un libellé lisible pour le projet — ce
+qui se range naturellement à côté de `echeances.json`, dans un `projets.json`
+qui porterait libellé *et* échéance.
+
+**b. Un UDA `parent`** pointant la tâche mère. Ça invente une hiérarchie que
+Taskwarrior ignore : aucun rapport, aucun filtre, aucune vue existante ne la
+comprendrait. Tout serait à réécrire.
+
+**Avis : (a).** Elle ne crée aucune notion nouvelle et réutilise trois
+mécanismes déjà en place.
+
+**Une règle d'exploitation à ne pas oublier :** au moment de la découpe, la tâche
+mère doit disparaître ou voir son `estTime` tomber à zéro. Sinon les 40 h de
+l'avant-projet et les 8 × 5 h du détail **se comptent deux fois**, et toute la
+capacité est fausse.
+
+**Et le « replier pour les chefs » est une règle d'affichage**, pas de modèle :
+agréger à une profondeur de projet donnée. Ça vaut pour le Gantt comme pour le
+rapport — et ça marche tout seul avec des sous-projets, pas avec un UDA.

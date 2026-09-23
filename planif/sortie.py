@@ -238,7 +238,8 @@ def ecrire_scheduled(plan, env=None, dry_run=False, taches_existantes=None):
             "ignorees": sorted(ignorees)}
 
 
-def ecrire_due(plan, taches, env=None, dry_run=False, taches_existantes=None):
+def ecrire_due(plan, taches, env=None, dry_run=False, taches_existantes=None,
+              dues=None):
     """Ecrit `due:` ET `duePlanif:` sur chaque tache placee. Rend un compte rendu.
 
         {'modifiees': [...], 'inchangees': [...], 'ignorees': [...]}
@@ -250,10 +251,20 @@ def ecrire_due(plan, taches, env=None, dry_run=False, taches_existantes=None):
     partielle (une commande qui echoue a moitie laisse alors `due` et
     `duePlanif` egaux tous les deux, ou tous les deux inchanges).
 
+    `dues` (optionnel) remplace `dues_calculees(plan, taches)` : c'est ce
+    qu'utilise `--appliquer` (planif/__main__.py) pour ecrire exactement les
+    dates d'un `plan.json` deja ecrit, sans rien recalculer. `None` (par
+    defaut) laisse le comportement strictement inchange. Fourni, c'est un
+    dict `{uuid: datetime}` qui ne porte pas forcement toutes les taches du
+    plan : une tache du plan (non `+externe`) absente de `dues` va dans
+    `ignorees`, exactement comme si son `due` etait nul.
+
     Sont mises dans `ignorees` :
 
     - les taches **`+externe`** : comme pour `scheduled` (proposal.md
       decision 10) ;
+    - les taches **absentes de `dues`** (uniquement possible quand `dues` est
+      fourni explicitement) ;
     - les taches dont le `due` actuel est un **engagement humain** : un `due`
       non nul pour lequel `planif.dues.est_calculee` est faux. Ecraser cette
       date serait ecraser une decision de l'utilisateur ;
@@ -270,7 +281,8 @@ def ecrire_due(plan, taches, env=None, dry_run=False, taches_existantes=None):
     etat = {t["uuid"]: t for t in taches_existantes}
     par_uuid_tache = {t.uuid: t for t in taches}
 
-    dues = dues_calculees(plan, taches)
+    if dues is None:
+        dues = dues_calculees(plan, taches)
     externes = {b.uuid for b in plan.blocs if b.externe}
 
     modifiees, inchangees, ignorees = [], [], []
@@ -278,7 +290,10 @@ def ecrire_due(plan, taches, env=None, dry_run=False, taches_existantes=None):
     for uuid in sorted(externes):
         ignorees.append(uuid)
 
-    for uuid in sorted(set(dues) - externes):
+    for uuid in sorted({b.uuid for b in plan.blocs} - externes):
+        if uuid not in dues:
+            ignorees.append(uuid)
+            continue
         tache = par_uuid_tache.get(uuid)
         if tache is not None and tache.due is not None and not est_calculee(tache):
             ignorees.append(uuid)

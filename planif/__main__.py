@@ -26,8 +26,21 @@ Le garde-fou le plus important vit tout en haut de ``main()`` : sans ``TASKRC``
 ni ``TASKDATA`` dans l'environnement, la commande refuse de demarrer avant
 d'avoir touche quoi que ce soit (AGENTS.md §2, sur le modele de
 ``../WebTaskManager/playwright.config.js``).
+
+``--appliquer <plan.json>`` (Nuit 3, etape 3) est un mode a part : celui du
+bouton Valider (E4). Il n'existe QUE pour ecrire dans Taskwarrior exactement
+le plan qu'un ``plan.json`` deja ecrit contient -- pas un plan recalcule
+entre-temps, qui pourrait differer de ce que l'utilisateur a regarde a
+l'ecran avant de cliquer. Il ne charge donc ni config, ni echeances, ni
+reunions, ne lance pas le solveur : il relit le fichier, reconstruit un
+``planif.solveur.Plan`` a partir de son contenu, et appelle
+``ecrire_scheduled``/``ecrire_due`` comme le ferait ``--ecrire-scheduled``/
+``--ecrire-due`` -- avec lesquels il est donc mutuellement exclusif, les deux
+voies d'ecriture ne se melangent pas. Il ne pose jamais ``+fige`` : c'est E3
+(``+fige``) qui le fait, ailleurs.
 """
 import argparse
+import json
 import logging
 import os
 import shlex
@@ -40,7 +53,7 @@ from planif.config import charger_config, charger_echeances
 from planif.echeances import appliquer_echeances_projet
 from planif.calendrier import indice_creneau
 from planif.selection import capacite_restante, selectionner_candidates
-from planif.solveur import completer, resoudre
+from planif.solveur import Bloc, Plan, completer, resoudre
 from planif.dues import oublier_dues_calculees
 from planif.sortie import ecrire_due, ecrire_json, ecrire_scheduled
 from planif.reunions import reunions as charger_reunions
@@ -86,6 +99,10 @@ def construire_analyseur():
     analyseur.add_argument("--sortie", default=str(SORTIE_DEFAUT),
                            help="chemin du plan JSON en sortie "
                                 "(defaut : {})".format(SORTIE_DEFAUT))
+    analyseur.add_argument("--appliquer", default=None, metavar="CHEMIN",
+                           help="applique un plan.json deja ecrit, sans rien "
+                                "recalculer (bouton Valider, E4) ; incompatible "
+                                "avec --ecrire-scheduled et --ecrire-due")
     analyseur.add_argument("--ecrire-scheduled", action="store_true",
                            help="ecrit scheduled: dans Taskwarrior ; sans cette "
                                 "option on n'ecrit jamais dans la base")
@@ -291,6 +308,64 @@ def formater_resume(plan, taches, temps_passe1, temps_passe2,
     return "\n".join(lignes)
 
 
+def _plan_depuis_fichier(donnees):
+    """Reconstruit un `planif.solveur.Plan` a partir d'un `plan.json` deja ecrit.
+
+    Aucun calcul : chaque bloc est repris tel quel, converti en indices de
+    creneaux via `planif.calendrier.indice_creneau`. `statut`, `retard_total`
+    et `en_retard` sont repris du fichier, pas recalcules.
+    """
+    t0 = datetime.fromisoformat(donnees["t0"])
+    granularite = timedelta(minutes=donnees["granularite_minutes"])
+    blocs = []
+    for uuid, entree in donnees["taches"].items():
+        for bloc in entree["blocs"]:
+            blocs.append(Bloc(
+                uuid=uuid,
+                indice=bloc["indice"],
+                debut=indice_creneau(t0, datetime.fromisoformat(bloc["debut"]),
+                                     granularite),
+                fin=indice_creneau(t0, datetime.fromisoformat(bloc["fin"]),
+                                   granularite),
+                externe=bool(bloc["externe"]),
+                agrege=bool(bloc["agrege"]),
+                opportuniste=bool(bloc["opportuniste"]),
+            ))
+    return Plan(blocs=tuple(blocs), t0=t0, granularite=granularite,
+               statut=donnees["statut"], retard_total=donnees["retard_total"],
+               en_retard=tuple(donnees["en_retard"]))
+
+
+def _appliquer(chemin_arg, env, analyseur):
+    """Le mode `--appliquer` : lit un `plan.json`, l'ecrit tel quel, sans calcul.
+
+    Voir la docstring du module : c'est ce que lance Valider (E4).
+    """
+    chemin = Path(chemin_arg)
+    if not chemin.exists():
+        analyseur.error("--appliquer : fichier introuvable : {}".format(chemin))
+
+    donnees = json.loads(chemin.read_text(encoding="utf-8"))
+    if donnees.get("version") != 1:
+        analyseur.error(
+            "--appliquer : version de plan non prise en charge ({}), "
+            "seule la version 1 est lue : {}".format(
+                donnees.get("version"), chemin))
+
+    plan = _plan_depuis_fichier(donnees)
+    taches = charger_taches(filtre=("status:pending",), env=env)
+
+    dues = {uuid: datetime.fromisoformat(entree["due"])
+           for uuid, entree in donnees["taches"].items()
+           if entree.get("due") is not None}
+
+    compte_scheduled = ecrire_scheduled(plan, env=env)
+    compte_due = ecrire_due(plan, taches, env=env, dues=dues)
+
+    print(json.dumps({"scheduled": compte_scheduled, "due": compte_due}))
+    return 0
+
+
 def main(argv=None):
     # AGENTS.md §5 : un encodage non explicite corrompt les accents sous
     # Windows. `print()` passe par `sys.stdout`, dont l'encodage par defaut
@@ -309,6 +384,13 @@ def main(argv=None):
 
     analyseur = construire_analyseur()
     args = analyseur.parse_args(argv)
+
+    if args.appliquer is not None:
+        if args.ecrire_scheduled or args.ecrire_due:
+            analyseur.error(
+                "--appliquer ne se combine pas avec --ecrire-scheduled ni "
+                "--ecrire-due : les deux voies d'ecriture ne se melangent pas.")
+        return _appliquer(args.appliquer, env, analyseur)
 
     # --- garde-fou : un chemin EXPLICITE absent est une erreur, pas un fichier
     # optionnel (contrairement au defaut d'echeances/reunions). Avant tout

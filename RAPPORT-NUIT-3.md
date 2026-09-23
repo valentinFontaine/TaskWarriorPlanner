@@ -85,9 +85,87 @@ Restauration contrôlée par SHA-256 à chaque mutation : identique.
 
 Hash restauré identique à chaque fois.
 
+### Étape 3 — mutations (`tests/test_nuit3_appliquer.py`, 17 tests, sur `base_jetable`)
+
+| Mutation | Résultat |
+|---|---|
+| M22 `dues` du fichier ignorées (recalcul `dues_calculees`) | 2 failed (`due` nulle écrite) |
+| M23 `due` humaine écrasée | 2 failed |
+| M24 tâches de la base non lues (`taches = []`) | 2 failed |
+| M25 `scheduled` en `dry_run` | 5 failed |
+| M26 combinaison avec `--ecrire-*` permise | 2 failed |
+| M27 version non contrôlée | 1 failed |
+| M28 idempotence de la `due` cassée | 1 failed (`appliquer deux fois`) |
+| M29 tâche absente de `dues` non ignorée | 12 errors (KeyError dans la fixture) |
+
+### Étape 4 — mutations (A : `test_nuit3_valider.py` 14 tests, `tests/plan-valider.spec.js` 9 tests)
+
+| Mutation | Résultat | Tests tombés |
+|---|---|---|
+| M11 empreinte sans `modified` | 3 failed | sha256, ordre/modified, « base a changé » |
+| M12 Valider ne compare pas l'empreinte | 1 failed | `test_si_la_base_a_change_valider_refuse_sans_rien_ecrire` |
+| M13 empreinte non prise au calcul | 5 failed | dont « prise au lancement », succès, 500 |
+| M14 validation par `--ecrire-scheduled` | 1 failed | test symétrique `…applique_le_plan_sans_recalcul` |
+| M15 statut `termine` non exigé | 1 failed | « après un calcul en échec » |
+| M16 refus pendant calcul retiré | 1 failed | « pendant un calcul » |
+| M17 plan absent non vérifié | 1 failed | « plan absent » |
+| M18 JS confirmation court-circuitée | 1 failed | « la refuser n'envoie rien » |
+| M19 JS pas de relance après succès | 1 failed | « un calcul est relancé » |
+| M20 JS bouton actif sans plan / pendant calcul | 2 failed | les deux « désactivé » |
+| M21 JS lit `error` au lieu de `detail` | 2 failed | 409 et 500 |
+
+### Étapes 3 + 4 — essai réel (vrai serveur :8011, vrai Taskwarrior, `taskwarrior-test` rechargée, `PLANIFICATEUR_*` sur la base de test)
+
+| Mesure | Valeur observée |
+|---|---|
+| calcul 1 : tâches dont `modified` a changé | 0 |
+| `plan.json` : tâches / `+externe` / `due` non nulle | 23 / **0** / 16 |
+| Valider 1 : `scheduled` | 23 modifiées, 0 inchangées, 0 ignorées (somme 23) |
+| Valider 1 : `due` | 16 modifiées, 0 inchangées, 7 ignorées (somme 23 ; les 7 = `due` nulles, toutes de passe 2) |
+| `task export` après Valider 1 | 23/23 `scheduled` = début du premier bloc ; 16/16 `due` = `duePlanif` = valeur du fichier ; 7/7 sans `due` ; 0 `+fige` posé |
+| Valider 2 **sans** recalcul | **409** « La base a changé depuis le calcul : recalculez avant de valider. » ; 0 tâche modifiée |
+| calcul 2 : tâches dont `modified` a changé | 0 |
+| Valider 2 **après** recalcul | `scheduled` 0 modifiée / 23 inchangées ; `due` 0 modifiée / 16 inchangées / 7 ignorées ; 0 tâche modifiée en base |
+
 ## 4. Frictions
 
-Voir `INVENTAIRE-NUIT-3.md`, « Écarts et faits notés ».
+Voir `INVENTAIRE-NUIT-3.md`, « Écarts et faits notés ». En plus :
+
+- **Tests jugés faux** : aucun.
+- **Écart avec la section 2** : le prompt redoute que le calcul lise « ses vraies
+  réunions Outlook » ; il n'existe pas de `reunions.json` dans B sur ce PC. Le
+  risque était latent, il est maintenant couvert.
+- **Défaut aperçu, hors périmètre, non corrigé** : dans le flux
+  `--ecrire-due` existant, une tâche terminale qui hérite l'échéance de son projet
+  est classée « engagement humain » (sa `due` est posée par
+  `appliquer_echeances_projet`, sans `duePlanif`) et **ignorée** : sa `due`
+  calculée n'est jamais écrite. `--appliquer` lit la base sans appliquer les
+  échéances de projet, donc ne reproduit pas ce défaut : sur ces tâches, Valider
+  écrit la `due` calculée, `--ecrire-due` non. À trancher par l'utilisateur.
+- **Écart assumé** entre `--appliquer` et `--ecrire-due` sur les tâches de passe 2
+  (voir interprétations, étape 2).
+- **Défaut aperçu, grave, hors périmètre, non corrigé : les prédécesseurs non datés
+  sortent de la passe 1, et la précédence avec eux.** `planif/__main__.py` ne donne à
+  `resoudre` que `taches_datees` (`t.due is not None`). Une échéance de projet ne se
+  pose que sur les terminales (`planif/echeances.py`) ; leurs prédécesseurs, sans
+  `due`, partent en passe 2, et `resoudre` ne pose une précédence que si le
+  prédécesseur est dans le modèle (`if predecesseur in fins`, `solveur.py`). Mesuré
+  sur `taskwarrior-test` fraîche : « Plan de detail carter » et « Devis fournisseur
+  usinage carter » sont **absents** de `plan.json` alors que leur successeur
+  « Essai fonctionnel carter » y est ; **aucune des 5 tâches `+externe`** n'est
+  dans le plan ; la tâche `+fige` du scénario S9 non plus. Le délai fournisseur et
+  la chaîne, qui sont la raison d'être de l'ordonnanceur, ne contraignent donc pas
+  le plan produit par la ligne de commande. Les tests du solveur passent parce
+  qu'ils appellent `resoudre` avec toutes les tâches. À reproduire en test puis
+  corriger dans un run dédié.
+- **Défaut aperçu, hors périmètre** : dans ce même plan, « Essai fonctionnel
+  carter » a son bloc `indice 1` (04/12) **avant** son bloc `indice 0` (11/12). Or
+  `+fige` impose le début du bloc d'indice 0 (`solveur.py`, contrainte 8), alors
+  qu'`ecrire_scheduled` écrit le début du bloc le plus tôt : sur une telle tâche,
+  figer à la valeur de `scheduled` ne fige pas le bloc qu'on croit.
+- `POST /api/plan/valider` est `async` et lance `--appliquer` de façon synchrone :
+  le serveur ne répond à rien d'autre pendant l'écriture (≈ quelques secondes pour
+  23 tâches). Acceptable en v1, à noter si la base grossit.
 
 ## 5. État d'arrivée
 
@@ -95,4 +173,5 @@ Voir `INVENTAIRE-NUIT-3.md`, « Écarts et faits notés ».
 |---|---|---|
 | 0 inventaire | fait | B `6334ef6` |
 | 1 chemins | fait | B `88428d4`, A `be7fc84` |
-| 2 due dans plan.json | fait | B (ce commit) |
+| 2 due dans plan.json | fait | B `595773c` |
+| 3 --appliquer | fait | B (ce commit) |

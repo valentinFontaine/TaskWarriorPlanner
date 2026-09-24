@@ -185,6 +185,9 @@ def ecrire_scheduled(plan, env=None, dry_run=False, taches_existantes=None):
     - les taches **`+externe`** : un delai fournisseur n'est pas du travail de
       l'utilisateur, ca n'a pas a apparaitre dans son agenda (proposal.md
       decision 10) ;
+    - les taches **`+fige`** : leur `scheduled` est un FAIT, un engagement de
+      l'utilisateur (tests/test_fige_fait.py) -- jamais ce que le plan a pu
+      calculer ailleurs, meme quand la passe 2 les a deplacees dans le modele ;
     - les taches **absentes de la base**, pour qu'un plan un peu vieux ne fasse
       pas echouer toute l'ecriture.
 
@@ -215,6 +218,9 @@ def ecrire_scheduled(plan, env=None, dry_run=False, taches_existantes=None):
 
     for uuid in sorted(premiers):
         if uuid not in etat:
+            ignorees.append(uuid)
+            continue
+        if "fige" in (etat[uuid].get("tags") or ()):
             ignorees.append(uuid)
             continue
         voulu = _vers_utc_taskwarrior(

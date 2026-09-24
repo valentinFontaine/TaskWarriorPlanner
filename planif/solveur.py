@@ -186,6 +186,16 @@ FACTEURS_ESCALADE = (1, 3, 9)
 ECHELLE_URGENCE = 100
 POIDS_PLANCHER = 100
 
+#: Poids d'un bloc de la SUITE d'une tache figee reste ABSENT (probleme
+#: contrats 8 et 9, tests/test_fige_fait.py) : les blocs suivants du bloc 0
+#: (le FAIT) sont OPTIONNELS, mais leur absence doit peser bien plus lourd
+#: que n'importe quel autre terme du meme objectif -- y compris le retard de
+#: la tache elle-meme (voir M5 : le bloc suivant doit rester place meme quand
+#: ca degrade legerement le retard mesure sur cette tache). 10**7 creneaux
+#: domine trivialement toute somme de retards ou d'urgences realiste (des
+#: annees d'horizon, a 30 minutes pres).
+PENALITE_ABSENCE_FIGE = 10 ** 7
+
 SECONDES_MAX = 300.0
 
 
@@ -339,6 +349,49 @@ def _en_creneaux(duree, granularite):
     return max(1, math.ceil(duree / granularite))
 
 
+def _construire_bloc_fige(modele, nom, fixe, t_bloc, frontiere, agregation):
+    """Le bloc 0 d'une tache `+fige` avec `scheduled` est un FAIT, pas une
+    decision (tests/test_fige_fait.py) : un intervalle CONSTANT, commencant
+    exactement a `fixe`, HORS du domaine des fenetres candidates.
+
+    C'est la correction du probleme 3 : l'ancienne contrainte 8 posait
+    `modele.Add(depart == fixe)` sur une variable dont le DOMAINE avait deja
+    ete restreint a l'union des fenetres candidates (lignes plus haut). Si
+    `fixe` n'y figurait pas -- hors grille, ou au-dela de la frontiere d'un
+    jour agrege -- cette egalite rendait tout le modele INFEASIBLE. Ici, le
+    domaine de `depart`/`arrivee` est un singleton DES LA CONSTRUCTION : il n'a
+    jamais ete restreint a autre chose, et il n'y a pas de contrainte d'egalite
+    a poser en plus.
+
+    Rend `(depart, arrivee, fin, agrege)`. `agrege` dit si le fait tombe
+    au-dela de la frontiere du regime agrege, pour l'exclure de `AddNoOverlap`
+    exactement comme n'importe quel autre bloc agrege (design.md §1) : deux
+    blocs d'une meme journee agregee peuvent legitimement s'y chevaucher.
+    """
+    fin = fixe + t_bloc
+    depart = modele.NewIntVar(fixe, fixe, "d_" + nom)
+    arrivee = modele.NewIntVar(fin, fin, "f_" + nom)
+    modele.Add(arrivee == depart + t_bloc)
+    agrege = agregation and fixe >= frontiere
+    return depart, arrivee, fin, agrege
+
+
+def _consommer_capacite_figee(charge_figee, t0, granularite, contexte_nom,
+                              fixe, fin, cache_contexte):
+    """Impute le volume d'un bloc fige a la capacite de son/ses jour(s).
+
+    Jamais une contrainte : `charge_figee` est seulement soustrait de la
+    capacite restante offerte aux blocs encore DECIDES par le solveur
+    (`max(0, capacite - sa taille)`), ce qui ne peut jamais rendre le modele
+    infaisable -- au pire, il ne reste plus de capacite pour les autres.
+    """
+    for indice in range(fixe, fin):
+        jour = instant_creneau(t0, indice, granularite).date()
+        if jour in cache_contexte:
+            cle = (contexte_nom, jour)
+            charge_figee[cle] = charge_figee.get(cle, 0) + 1
+
+
 def decouper_en_blocs(taille_totale, bloc_min, insecable=False):
     """design.md §5, variables.
 
@@ -478,10 +531,17 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     intervalles_ressource = []   # ce qui entre dans AddNoOverlap
     # (contexte, jour) -> liste de (taille, litteral) pour la capacite quotidienne
     charge_du_jour = {}
+    # (contexte, jour) -> creneaux deja consommes par un bloc fige (un FAIT,
+    # jamais une contrainte -- voir _consommer_capacite_figee).
+    charge_figee = {}
     blocs_modele = {}            # uuid -> liste de (indice, start, end, taille)
     debuts = {}
     fins = {}
     termes_objectif = []   # « au plus tard » : voir la note a la fin
+    # (uuid, indice) -> litteral de presence d'un bloc de la SUITE d'une tache
+    # figee (indice >= 1). Absent de ce dict == bloc toujours present (bloc 0,
+    # le FAIT, ou bloc ordinaire d'une tache non figee) -- voir plus bas.
+    presences_fige_bloc = {}
 
     for tache in taches:
         if tache.estimated is None:
@@ -523,6 +583,15 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         blocs_modele[tache.uuid] = []
         starts_tache, ends_tache = [], []
 
+        # Le bloc 0 d'une tache `+fige` avec `scheduled` est un FAIT (contrainte
+        # 8, tests/test_fige_fait.py) : `fin_fige` borne les blocs SUIVANTS de
+        # la meme tache -- ils ne commencent jamais avant que le fait ne soit
+        # termine.
+        fige0 = tache.fige and tache.scheduled is not None
+        fin_fige = None
+        if fige0:
+            fixe0 = indice_creneau(t0, tache.scheduled, granularite)
+
         candidates_detaillees = [
             (jour, plage.debut, plage.fin, False) for jour, plage in fenetres]
         candidates_agregees = [(jour, debut, fin, True) for jour, debut, fin in journees]
@@ -552,6 +621,21 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         for indice, t_bloc in enumerate(tailles):
             nom = "{}#{}".format(tache.uuid[:8], indice)
 
+            if indice == 0 and fige0:
+                # Le FAIT, pas une decision : voir _construire_bloc_fige.
+                depart, arrivee, fin_fige, agrege_fige = _construire_bloc_fige(
+                    modele, nom, fixe0, t_bloc, frontiere, agregation)
+                if not agrege_fige:
+                    intervalles_ressource.append(
+                        modele.NewIntervalVar(depart, t_bloc, arrivee, "i_" + nom))
+                _consommer_capacite_figee(
+                    charge_figee, t0, granularite, tache.contexte, fixe0,
+                    fin_fige, cache[tache.contexte][2])
+                blocs_modele[tache.uuid].append((indice, depart, arrivee, t_bloc))
+                starts_tache.append(depart)
+                ends_tache.append(arrivee)
+                continue
+
             # On calcule les fenetres retenues AVANT de creer les variables,
             # pour donner a `depart` un domaine reduit a l'union exacte des
             # positions possibles, au lieu de tout l'horizon.
@@ -566,11 +650,90 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
             retenues = []
             for jour, borne_brute, borne_haute, cand_agrege in candidates:
                 borne_basse = max(borne_brute, tot)
+                if fin_fige is not None:
+                    # Les blocs suivants d'une tache figee ne commencent
+                    # jamais avant que le FAIT (bloc 0) ne soit termine.
+                    borne_basse = max(borne_basse, fin_fige)
                 if cand_agrege:
                     borne_basse = max(borne_basse, frontiere)
                 if borne_haute - borne_basse < t_bloc:
                     continue
                 retenues.append((jour, borne_basse, borne_haute, cand_agrege))
+
+            if fin_fige is not None:
+                # --- la SUITE d'une tache figee (indice >= 1) : chaque bloc
+                # est OPTIONNEL, jamais une contrainte qui pourrait rendre le
+                # modele infaisable (probleme des contrats 8/9,
+                # tests/test_fige_fait.py). Le bloc 0 (le FAIT) est deja pose
+                # plus haut, hors de ce chemin.
+                if not retenues:
+                    # Aucune fenetre candidate d'ici l'horizon : le bloc est
+                    # simplement absent, jamais `depart > horizon`.
+                    _LOG.warning(
+                        "tache %s (figee) : le bloc %d de sa suite n'a aucune "
+                        "fenetre candidate d'ici l'horizon, il reste absent "
+                        "du plan (le FAIT, bloc 0, est preserve)",
+                        tache.uuid, indice)
+                    continue
+
+                domaine = cp_model.Domain.FromIntervals(
+                    [[bas, haut - t_bloc] for _, bas, haut, _ in retenues])
+                depart = modele.NewIntVarFromDomain(domaine, "d_" + nom)
+                arrivee = modele.NewIntVarFromDomain(
+                    cp_model.Domain.FromIntervals(
+                        [[bas + t_bloc, haut] for _, bas, haut, _ in retenues]),
+                    "f_" + nom)
+                modele.Add(arrivee == depart + t_bloc)
+
+                presence_bloc = modele.NewBoolVar("pf_" + nom)
+                presences_fige_bloc[(tache.uuid, indice)] = presence_bloc
+
+                litteraux = []
+                litteraux_detailles = []
+                for jour, borne_basse, borne_haute, cand_agrege in retenues:
+                    lit = modele.NewBoolVar(
+                        "w_{}_{}_{}".format(nom, jour, borne_basse))
+                    modele.Add(depart >= borne_basse).OnlyEnforceIf(lit)
+                    modele.Add(depart + t_bloc <= borne_haute).OnlyEnforceIf(lit)
+                    litteraux.append(lit)
+                    if not cand_agrege:
+                        litteraux_detailles.append(lit)
+                    charge_du_jour.setdefault(
+                        (tache.contexte, jour), []).append((t_bloc, lit))
+                # Exactement une fenetre SI le bloc est retenu, aucune sinon --
+                # le meme patron que les candidates opportunistes de `completer`.
+                modele.AddExactlyOne(litteraux).OnlyEnforceIf(presence_bloc)
+                for lit in litteraux:
+                    modele.AddImplication(lit, presence_bloc)
+
+                if litteraux_detailles:
+                    if len(litteraux_detailles) == len(litteraux):
+                        intervalles_ressource.append(
+                            modele.NewOptionalIntervalVar(
+                                depart, t_bloc, arrivee, presence_bloc, "i_" + nom))
+                    else:
+                        en_detaille = modele.NewBoolVar("edet_" + nom)
+                        modele.Add(en_detaille == sum(litteraux_detailles))
+                        intervalles_ressource.append(
+                            modele.NewOptionalIntervalVar(
+                                depart, t_bloc, arrivee, en_detaille, "i_" + nom))
+
+                # Si absent, on fixe `depart` au minimum de son domaine plutot
+                # que de le laisser libre : sans ca, une valeur arbitraire du
+                # domaine gonflerait `d_t`/`f_t` (debut/fin de la TACHE, plus
+                # bas) sans correspondre a un placement reel.
+                borne_min_domaine = min(bas for _, bas, _, _ in retenues)
+                modele.Add(depart == borne_min_domaine).OnlyEnforceIf(
+                    presence_bloc.Not())
+
+                blocs_modele[tache.uuid].append((indice, depart, arrivee, t_bloc))
+                starts_tache.append(depart)
+                ends_tache.append(arrivee)
+                # PAS dans `termes_objectif` : la suite d'une tache figee ne
+                # doit pas etre repoussee « au plus tard » comme un bloc
+                # ordinaire -- au contraire, elle doit etre placee des que
+                # possible (voir PENALITE_ABSENCE_FIGE, plus bas).
+                continue
 
             if retenues:
                 domaine = cp_model.Domain.FromIntervals(
@@ -667,18 +830,16 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
 
     # --- marge quotidienne (decision 11), posee en volume --------------------
     # C'est la contrainte qui tient AUSSI en regime agrege : on relache les
-    # heures, jamais la capacite.
+    # heures, jamais la capacite. Un bloc fige (contrainte 8) n'y ajoute aucun
+    # litteral : il REDUIT la capacite offerte aux blocs encore decides,
+    # jamais en dessous de zero -- ce qui ne peut jamais rendre le modele
+    # infaisable, contrairement a l'ancienne egalite sur variable restreinte.
     for (nom_ctx, jour), charges in charge_du_jour.items():
         capacite = cache[nom_ctx][2].get(jour)
         if capacite is None:
             continue
-        modele.Add(sum(taille * lit for taille, lit in charges) <= capacite)
-
-    # --- contrainte 8 : taches figees ---------------------------------------
-    for tache in taches:
-        if tache.fige and tache.scheduled is not None and tache.uuid in blocs_modele:
-            fixe = indice_creneau(t0, tache.scheduled, granularite)
-            modele.Add(blocs_modele[tache.uuid][0][1] == fixe)
+        reste = max(0, capacite - charge_figee.get((nom_ctx, jour), 0))
+        modele.Add(sum(taille * lit for taille, lit in charges) <= reste)
 
     # --- contrainte 6 : precedences -----------------------------------------
     for tache in taches:
@@ -716,18 +877,36 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         ordre_retard.append((uuid, retard))
 
     # === Objectif, en DEUX resolutions et non deux objectifs (design.md §5) ===
-    # CP-SAT n'optimise pas lexicographiquement. On minimise d'abord le retard,
-    # on fige l'optimum trouve, puis on maximise la somme des debuts.
-    if retards:
-        modele.Minimize(sum(retards))
+    # CP-SAT n'optimise pas lexicographiquement. On minimise d'abord le retard
+    # -- avec, dans le MEME terme, l'absence de tout bloc de la suite d'une
+    # tache figee, fortement penalisee (PENALITE_ABSENCE_FIGE) pour qu'elle
+    # domine le retard : le solveur place la suite des qu'il le peut, meme au
+    # prix d'un retard marginal sur cette meme tache (M5) -- puis on fige
+    # l'optimum trouve et on maximise la somme des debuts.
+    presences_fige = list(presences_fige_bloc.values())
+    if retards or presences_fige:
+        objectif1 = list(retards) + [
+            PENALITE_ABSENCE_FIGE * (1 - p) for p in presences_fige]
+        modele.Minimize(sum(objectif1))
         s1 = _solveur(budget)
         etat1 = s1.Solve(modele)
-        _signaler_arret_horloge(s1, etat1, "passe 1 (minimisation du retard)")
+        _signaler_arret_horloge(s1, etat1, "passe 1 (retard + suite figee)")
         if etat1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return _sans_solution(s1, etat1, "passe 1 (minimisation du retard)",
+            return _sans_solution(s1, etat1, "passe 1 (retard + suite figee)",
                                   t0, granularite)
-        retard_optimal = int(s1.ObjectiveValue())
-        modele.Add(sum(retards) <= retard_optimal)
+        if retards:
+            retard_optimal = s1.Value(sum(retards))
+            modele.Add(sum(retards) <= retard_optimal)
+        if presences_fige:
+            absences = [1 - p for p in presences_fige]
+            absences_optimal = s1.Value(sum(absences))
+            modele.Add(sum(absences) <= absences_optimal)
+            for (uuid, indice), p in presences_fige_bloc.items():
+                if not s1.Value(p):
+                    _LOG.warning(
+                        "tache %s (figee) : le bloc %d de sa suite reste "
+                        "absent du plan faute de place (le FAIT, bloc 0, "
+                        "est preserve)", uuid, indice)
 
     # « au plus tard en securite » (decision 7) : on pousse chaque intervalle
     # aussi loin que les contraintes le permettent. La date planifiee EST la marge.
@@ -742,6 +921,9 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     for uuid, liste in blocs_modele.items():
         externe = par_uuid[uuid].externe
         for indice, depart, arrivee, _ in liste:
+            presence_bloc = presences_fige_bloc.get((uuid, indice))
+            if presence_bloc is not None and not s2.Value(presence_bloc):
+                continue   # bloc de la suite d'une tache figee, absent ici
             debut = s2.Value(depart)
             # Le regime effectif se lit sur le PLACEMENT, pas sur le statut
             # "detaillee"/"agregee" de la tache : une tache detaillee dont un
@@ -766,6 +948,21 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         retard_total=retard_total,
         en_retard=en_retard,
     )
+
+
+def _replan(plan, blocs_supplementaires):
+    """Rend `plan` augmente de `blocs_supplementaires`, sans rien changer d'autre.
+
+    Sert aux issues de secours de `completer` : un FAIT (bloc 0 fige) reste vrai
+    meme quand le remplissage opportuniste, lui, echoue -- ce n'est pas une
+    candidate que l'echec du solveur pourrait annuler.
+    """
+    if not blocs_supplementaires:
+        return plan
+    blocs = tuple(plan.blocs) + tuple(blocs_supplementaires)
+    return Plan(blocs=tuple(sorted(blocs, key=lambda b: (b.debut, b.uuid, b.indice))),
+               t0=plan.t0, granularite=plan.granularite, statut=plan.statut,
+               retard_total=plan.retard_total, en_retard=plan.en_retard)
 
 
 def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
@@ -857,6 +1054,15 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     #
     # C'est le « par urgence decroissante » du lot 6, jamais ecrit jusqu'ici.
     debuts_ponderes = []
+    # Le bloc 0 des taches `+fige` non datees soumises en passe 2 (probleme 1,
+    # tests/test_fige_fait.py) : un FAIT construit avec `_construire_bloc_fige`,
+    # au meme titre que les blocs de la passe 1 ci-dessus -- pas une candidate
+    # que « au plus tot » pourrait deplacer.
+    blocs_fige_completer = []
+    # (uuid, indice) -> litteral de presence d'un bloc de la SUITE d'une tache
+    # figee non datee (indice >= 1, probleme 1 cote passe 2). Jamais la
+    # presence, forcee a 1, du bloc 0 (le FAIT) -- voir le fork plus bas.
+    presences_fige_bloc = {}
 
     for tache in taches:
         if tache.estimated is None or tache.uuid in deja_planifiees:
@@ -879,16 +1085,110 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
         blocs_modele[tache.uuid] = []
         starts_tache, ends_tache = [], []
 
+        fige0 = tache.fige and tache.scheduled is not None
+        fin_fige = None
+        indice_depart = 0
+        if fige0:
+            # Une tache figee n'est jamais optionnelle : son bloc 0 est deja
+            # un fait accompli, pas une decision que « au plus tot » pourrait
+            # reorganiser (probleme 1).
+            modele.Add(presence == 1)
+            fixe0 = indice_creneau(t0, tache.scheduled, granularite)
+            t_bloc0 = tailles[0]
+            nom0 = "o_{}#0".format(tache.uuid[:8])
+            depart0, arrivee0, fin_fige, agrege0 = _construire_bloc_fige(
+                modele, nom0, fixe0, t_bloc0, frontiere, agregation)
+            if not agrege0:
+                intervalles_ressource.append(
+                    modele.NewIntervalVar(depart0, t_bloc0, arrivee0, "i_" + nom0))
+            _consommer_capacite_figee(
+                charge_figee, t0, granularite, tache.contexte, fixe0, fin_fige,
+                cache[tache.contexte][2])
+            blocs_fige_completer.append(Bloc(
+                uuid=tache.uuid, indice=0, debut=fixe0, fin=fin_fige,
+                externe=False, agrege=agrege0, opportuniste=False))
+            starts_tache.append(depart0)
+            ends_tache.append(arrivee0)
+            tailles = tailles[1:]   # le reste, s'il y en a, suit le chemin normal
+            indice_depart = 1
+
         candidates = [(jour, plage.debut, plage.fin) for jour, plage in fenetres]
         candidates += journees
 
-        for indice, t_bloc in enumerate(tailles):
+        for indice_rel, t_bloc in enumerate(tailles):
+            indice = indice_rel + indice_depart
             nom = "o_{}#{}".format(tache.uuid[:8], indice)
             retenues = []
             for jour, borne_brute, borne_haute in candidates:
                 borne_basse = max(borne_brute, tot)
+                if fin_fige is not None:
+                    # Les blocs suivants d'une tache figee ne commencent
+                    # jamais avant que le FAIT (bloc 0) ne soit termine.
+                    borne_basse = max(borne_basse, fin_fige)
                 if borne_haute - borne_basse >= t_bloc:
                     retenues.append((jour, borne_basse, borne_haute))
+
+            if fige0:
+                # --- la SUITE d'une tache figee non datee (probleme 1) : un
+                # litteral de presence PAR BLOC, jamais le `presence` du bloc 0
+                # (le FAIT, force a 1 plus haut) -- sinon on retombe sur la
+                # contradiction du contrat (test 9) : `presence == 1` puis
+                # `presence == 0` sur la MEME variable, modele entier infaisable.
+                if not retenues:
+                    _LOG.warning(
+                        "tache %s (figee) : le bloc %d de sa suite n'a aucune "
+                        "fenetre candidate d'ici l'horizon, il reste absent "
+                        "du plan (le FAIT, bloc 0, est preserve)",
+                        tache.uuid, indice)
+                    continue
+
+                presence_bloc = modele.NewBoolVar("pf_" + nom)
+                presences_fige_bloc[(tache.uuid, indice)] = presence_bloc
+
+                domaine = cp_model.Domain.FromIntervals(
+                    [[bas, haut - t_bloc] for _, bas, haut in retenues])
+                depart = modele.NewIntVarFromDomain(domaine, "d_" + nom)
+                arrivee = modele.NewIntVarFromDomain(
+                    cp_model.Domain.FromIntervals(
+                        [[bas + t_bloc, haut] for _, bas, haut in retenues]),
+                    "f_" + nom)
+                modele.Add(arrivee == depart + t_bloc)
+
+                intervalles_ressource.append(
+                    modele.NewOptionalIntervalVar(
+                        depart, t_bloc, arrivee, presence_bloc, "i_" + nom))
+
+                litteraux = []
+                for jour, borne_basse, borne_haute in retenues:
+                    lit = modele.NewBoolVar("w_{}_{}".format(nom, jour))
+                    modele.Add(depart >= borne_basse).OnlyEnforceIf(lit)
+                    modele.Add(depart + t_bloc <= borne_haute).OnlyEnforceIf(lit)
+                    litteraux.append(lit)
+                    charge_du_jour.setdefault(
+                        (tache.contexte, jour), []).append((t_bloc, lit))
+                modele.AddExactlyOne(litteraux).OnlyEnforceIf(presence_bloc)
+                for lit in litteraux:
+                    modele.AddImplication(lit, presence_bloc)
+
+                # Si absent, `depart` est fixe au minimum de son domaine plutot
+                # que laisse libre -- sinon une valeur arbitraire gonflerait
+                # `d_t`/`f_t` (debut/fin de la tache, plus bas) sans
+                # correspondre a un placement reel.
+                borne_min_domaine = min(bas for _, bas, _ in retenues)
+                modele.Add(depart == borne_min_domaine).OnlyEnforceIf(
+                    presence_bloc.Not())
+
+                blocs_modele[tache.uuid].append((indice, depart, arrivee, t_bloc))
+                starts_tache.append(depart)
+                ends_tache.append(arrivee)
+                # Plancher d'urgence, meme logique que les candidates
+                # ordinaires : « au plus tot » doit aussi pousser la suite
+                # d'une figee des qu'elle est presente.
+                poids_urgence = POIDS_PLANCHER + int(round(
+                    max(0.0, tache.urgency) * ECHELLE_URGENCE))
+                debuts_ponderes.append((poids_urgence, depart))
+                continue
+
             if not retenues:
                 modele.Add(presence == 0)
                 break
@@ -973,10 +1273,28 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     # en entier, CP-SAT ne manipulant que des entiers.
     echelle = 1000
     poids = []
+    # Plancher + decalage sur l'urgence minimale des candidates : une tache
+    # bloquee vaut -5 d'urgence dans Taskwarrior, or un poids negatif
+    # penaliserait sa presence au lieu de rester indifferent. On decale donc
+    # toutes les urgences par rapport au minimum observe ici (u_min <= 0
+    # possible) pour que le poids de presence reste toujours strictement
+    # positif, en preservant l'ordre relatif des urgences (POIDS_PLANCHER >
+    # 0 partout, meme quand u_min == urgency).
+    urgences_candidates = [tache.urgency for tache in taches
+                           if tache.uuid in presences]
+    u_min = min(urgences_candidates) if urgences_candidates else 0.0
     for tache in taches:
         if tache.uuid in presences:
-            poids.append(int(round(tache.urgency * echelle)) * presences[tache.uuid])
-    modele.Maximize(sum(poids) if poids else 0)
+            poids_presence = POIDS_PLANCHER + int(round(
+                (tache.urgency - u_min) * echelle))
+            poids.append(poids_presence * presences[tache.uuid])
+    # La suite d'une tache figee (probleme 1) pese, dans ce MEME objectif,
+    # bien plus que n'importe quelle urgence : sa presence doit dominer, sans
+    # quoi elle serait mise en concurrence avec des candidates ordinaires pour
+    # de la capacite -- exactement ce que le contrat interdit (test 9).
+    presences_fige = list(presences_fige_bloc.values())
+    objectif1 = list(poids) + [PENALITE_ABSENCE_FIGE * p for p in presences_fige]
+    modele.Maximize(sum(objectif1) if objectif1 else 0)
     s1 = _solveur()
     etat1 = s1.Solve(modele)
     _signaler_arret_horloge(s1, etat1, "passe 2 (maximisation de l'urgence)")
@@ -990,9 +1308,20 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
             "passe 2 : modele sans solution (%s), 0 tache placee sur %d "
             "candidates ; le plan ressort tel quel",
             s1.StatusName(etat1), len(presences))
-        return plan   # aucune place : on rend la passe 1 telle quelle
-    urgence_optimale = int(s1.ObjectiveValue())
+        # Les FAITS (blocs figes non-datees) restent vrais meme quand le
+        # remplissage opportuniste echoue : ce ne sont pas des candidates.
+        return _replan(plan, blocs_fige_completer)
+    urgence_optimale = s1.Value(sum(poids)) if poids else 0
     modele.Add(sum(poids) >= urgence_optimale)
+    if presences_fige:
+        presence_fige_optimale = s1.Value(sum(presences_fige))
+        modele.Add(sum(presences_fige) >= presence_fige_optimale)
+        for (uuid, indice), p in presences_fige_bloc.items():
+            if not s1.Value(p):
+                _LOG.warning(
+                    "tache %s (figee) : le bloc %d de sa suite reste absent "
+                    "du plan faute de place (le FAIT, bloc 0, est preserve)",
+                    uuid, indice)
 
     # « au plus tot » : c'est l'inverse exact de la passe 1, et c'est voulu.
     # Le travail sans echeance se fait des qu'il y a de la place ; le travail
@@ -1007,14 +1336,17 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
             "passe 2 : pas de solution au second objectif (%s), 0 tache placee "
             "sur %d candidates ; le plan ressort tel quel",
             s2.StatusName(etat), len(presences))
-        return plan
+        return _replan(plan, blocs_fige_completer)
 
     # --- on recolle : la passe 1 d'abord, telle quelle ---------------------
-    blocs = list(plan.blocs)
+    blocs = list(plan.blocs) + blocs_fige_completer
     for uuid, liste in blocs_modele.items():
         if not s2.Value(presences[uuid]):
             continue
         for indice, depart, arrivee, _ in liste:
+            presence_bloc = presences_fige_bloc.get((uuid, indice))
+            if presence_bloc is not None and not s2.Value(presence_bloc):
+                continue   # bloc de la suite d'une tache figee, absent ici
             debut = s2.Value(depart)
             blocs.append(Bloc(uuid=uuid, indice=indice,
                               debut=debut, fin=s2.Value(arrivee),

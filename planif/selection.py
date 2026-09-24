@@ -136,6 +136,12 @@ def selectionner_candidates(taches, capacites, facteur=FACTEUR_OFFRE):
         cumul = timedelta(0)
         sature = False
         for tache in sorted(candidates, key=lambda t: (-t.urgency, t.uuid)):
+            if tache.fige:
+                # Un FAIT, pas une decision (tests/test_fige_fait.py) : elle ne
+                # demande aucune capacite de choix, elle ne consomme donc pas
+                # le budget des autres et n'est jamais ecartee.
+                retenues.append(tache)
+                continue
             if sature or cumul + tache.estimated > budget:
                 # On ne « saute » pas une grosse tache pour en caser une plus
                 # petite derriere : la file est une file. Sinon l'ordre annonce

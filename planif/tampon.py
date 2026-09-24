@@ -27,7 +27,8 @@ from datetime import datetime, timedelta
 
 from planif.taskwarrior import vers_local_naif
 
-__all__ = ["CycleDependances", "echeance_effective", "limites_effectives"]
+__all__ = ["CycleDependances", "echeance_effective", "limites_effectives",
+           "separer_passe1_passe2"]
 
 # Tampon fixe du cahier des charges : 24 heures avant l'echeance reelle.
 TAMPON = timedelta(hours=24)
@@ -150,3 +151,44 @@ def limites_effectives(taches, contextes, tampon=TAMPON):
         limite_de(uuid)
 
     return resultats
+
+
+def separer_passe1_passe2(taches):
+    """Rend `(passe1, passe2)` : la passe 1 est les taches DATEES UNION leurs
+    predecesseurs transitifs (`tache.depends`, uuids presents dans `taches`).
+
+    Le defaut corrige ici : ne mettre en passe 1 que `t.due is not None`
+    laisse un predecesseur non date d'une tache datee partir en passe 2, qui
+    ne le contraint jamais a finir avant son successeur (`planif/solveur.py`
+    pose la precedence uniquement entre candidates d'une meme passe). Pire,
+    une tache `+externe` non datee est en plus explicitement ecartee de la
+    passe 2 et n'apparaissait alors dans aucune des deux.
+
+    En remontant `depends` transitivement, tout predecesseur d'une tache
+    datee est planifie COMME une tache datee : `limites_effectives` (appelee
+    par `resoudre` quand on ne lui fournit pas `limites`) sait deja lui
+    heriter une limite depuis ses successeurs, il suffit de le lui donner en
+    entree.
+
+    Une tache non datee sans successeur date (direct ou transitif) reste en
+    passe 2, en regime opportuniste : ce n'est pas ce defaut-la qui est
+    corrige.
+    """
+    par_uuid = {t.uuid: t for t in taches}
+    retenus = set()
+    pile = [t.uuid for t in taches if t.due is not None]
+    while pile:
+        uuid = pile.pop()
+        if uuid in retenus:
+            continue
+        retenus.add(uuid)
+        tache = par_uuid.get(uuid)
+        if tache is None:
+            continue
+        for predecesseur in tache.depends:
+            if predecesseur in par_uuid and predecesseur not in retenus:
+                pile.append(predecesseur)
+
+    passe1 = [t for t in taches if t.uuid in retenus]
+    passe2 = [t for t in taches if t.uuid not in retenus]
+    return passe1, passe2

@@ -482,7 +482,6 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     debuts = {}
     fins = {}
     termes_objectif = []   # « au plus tard » : voir la note a la fin
-    agreges = set()              # uuids modelises en regime agrege
 
     for tache in taches:
         if tache.estimated is None:
@@ -519,25 +518,36 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         detaillee = (not agregation) or (
             limite is not None
             and indice_creneau(t0, limite, granularite) <= frontiere)
-        if not detaillee:
-            agreges.add(tache.uuid)
 
         tailles = decouper_en_blocs(taille, bloc_min, insecable=tache.insecable)
         blocs_modele[tache.uuid] = []
         starts_tache, ends_tache = [], []
 
+        candidates_detaillees = [
+            (jour, plage.debut, plage.fin, False) for jour, plage in fenetres]
+        candidates_agregees = [(jour, debut, fin, True) for jour, debut, fin in journees]
         if detaillee:
-            # Regime DETAILLE : le bloc tient tout entier dans UNE plage de la
-            # grille. Il ne peut ni enjamber la pause du midi, ni franchir
-            # minuit. Et il entre dans la ressource unique.
-            candidates = [(jour, plage.debut, plage.fin) for jour, plage in fenetres]
+            # Regime DETAILLE, avec une SOUPAPE : en plus de ses fenetres
+            # detaillees (ou le bloc tient tout entier dans une plage de la
+            # grille et entre dans la ressource unique), un bloc peut aussi
+            # tomber sur une journee AGREGEE au-dela de la frontiere, exactement
+            # comme un bloc d'une tache agregee. C'est ce qui rend l'echeance
+            # souple meme quand la capacite avant frontiere ne suffit pas
+            # (design.md §1) : sans cette soupape, `retenues` restait vide pour
+            # un bloc et le modele entier devenait INFEASIBLE (voir la note en
+            # tete de fichier de tests/test_echeance_souple_frontiere.py).
+            # L'objectif continue de preferer le regime detaille : minimiser le
+            # retard (premiere passe de l'objectif, plus bas) exclut d'office
+            # les debordements agreges qui depasseraient la limite quand la
+            # capacite detaillee suffit deja.
+            candidates = candidates_detaillees + candidates_agregees
         else:
             # Regime AGREGE : la journee entiere sert de fenetre, et le bloc
             # n'entre PAS dans AddNoOverlap. `frontiere` dans la borne basse
             # garantit qu'un bloc agrege ne vient jamais se superposer a un
             # bloc detaille : les deux regimes restent dans des plages de temps
             # disjointes.
-            candidates = journees
+            candidates = candidates_agregees
 
         for indice, t_bloc in enumerate(tailles):
             nom = "{}#{}".format(tache.uuid[:8], indice)
@@ -554,37 +564,36 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
             # part avec un domaine de plusieurs milliers de valeurs dont
             # l'immense majorite est interdite (nuits, week-ends, pauses).
             retenues = []
-            for jour, borne_brute, borne_haute in candidates:
+            for jour, borne_brute, borne_haute, cand_agrege in candidates:
                 borne_basse = max(borne_brute, tot)
-                if not detaillee:
+                if cand_agrege:
                     borne_basse = max(borne_basse, frontiere)
                 if borne_haute - borne_basse < t_bloc:
                     continue
-                retenues.append((jour, borne_basse, borne_haute))
+                retenues.append((jour, borne_basse, borne_haute, cand_agrege))
 
             if retenues:
                 domaine = cp_model.Domain.FromIntervals(
-                    [[bas, haut - t_bloc] for _, bas, haut in retenues])
+                    [[bas, haut - t_bloc] for _, bas, haut, _ in retenues])
                 depart = modele.NewIntVarFromDomain(domaine, "d_" + nom)
                 arrivee = modele.NewIntVarFromDomain(
                     cp_model.Domain.FromIntervals(
-                        [[bas + t_bloc, haut] for _, bas, haut in retenues]),
+                        [[bas + t_bloc, haut] for _, bas, haut, _ in retenues]),
                     "f_" + nom)
             else:
                 depart = modele.NewIntVar(tot, max(tot, horizon - t_bloc), "d_" + nom)
                 arrivee = modele.NewIntVar(tot, horizon, "f_" + nom)
             modele.Add(arrivee == depart + t_bloc)
 
-            if detaillee:
-                intervalles_ressource.append(
-                    modele.NewIntervalVar(depart, t_bloc, arrivee, "i_" + nom))
-
             litteraux = []
-            for jour, borne_basse, borne_haute in retenues:
+            litteraux_detailles = []
+            for jour, borne_basse, borne_haute, cand_agrege in retenues:
                 lit = modele.NewBoolVar("w_{}_{}_{}".format(nom, jour, borne_basse))
                 modele.Add(depart >= borne_basse).OnlyEnforceIf(lit)
                 modele.Add(depart + t_bloc <= borne_haute).OnlyEnforceIf(lit)
                 litteraux.append(lit)
+                if not cand_agrege:
+                    litteraux_detailles.append(lit)
                 charge_du_jour.setdefault(
                     (tache.contexte, jour), []).append((t_bloc, lit))
 
@@ -595,6 +604,26 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
                 modele.Add(depart > horizon)   # domaine vide : INFEASIBLE
             else:
                 modele.AddExactlyOne(litteraux)
+
+            # L'intervalle n'entre dans la ressource unique QUE quand le bloc
+            # est effectivement place en regime detaille. Quand toutes les
+            # fenetres retenues sont detaillees (cas d'origine, sans soupape),
+            # l'intervalle est inconditionnel. Des qu'une soupape agregee est
+            # possible en plus, il devient OPTIONNEL, conditionne au litteral
+            # « en detaille » -- sinon un bloc reellement place en agrege
+            # entrerait quand meme dans AddNoOverlap et pourrait se voir
+            # interdire de chevaucher un autre bloc agrege de la meme journee,
+            # ce que le regime agrege autorise explicitement (design.md §1).
+            if litteraux_detailles:
+                if len(litteraux_detailles) == len(litteraux):
+                    intervalles_ressource.append(
+                        modele.NewIntervalVar(depart, t_bloc, arrivee, "i_" + nom))
+                else:
+                    en_detaille = modele.NewBoolVar("edet_" + nom)
+                    modele.Add(en_detaille == sum(litteraux_detailles))
+                    intervalles_ressource.append(
+                        modele.NewOptionalIntervalVar(
+                            depart, t_bloc, arrivee, en_detaille, "i_" + nom))
 
             # « au plus tard en securite » : chaque debut entre dans
             # l'objectif. Une variante a ete essayee et ABANDONNEE — n'optimiser
@@ -712,10 +741,17 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     blocs = []
     for uuid, liste in blocs_modele.items():
         externe = par_uuid[uuid].externe
-        agrege = uuid in agreges
         for indice, depart, arrivee, _ in liste:
+            debut = s2.Value(depart)
+            # Le regime effectif se lit sur le PLACEMENT, pas sur le statut
+            # "detaillee"/"agregee" de la tache : une tache detaillee dont un
+            # bloc a du emprunter la soupape agregee (voir plus haut) rend un
+            # bloc agrege comme n'importe quel autre. `frontiere` separe les
+            # deux regimes dans le temps par construction : un bloc detaille
+            # ne peut jamais commencer a ou apres elle.
+            agrege = (not externe) and agregation and debut >= frontiere
             blocs.append(Bloc(uuid=uuid, indice=indice,
-                              debut=s2.Value(depart), fin=s2.Value(arrivee),
+                              debut=debut, fin=s2.Value(arrivee),
                               externe=externe, agrege=agrege))
     blocs.sort(key=lambda b: (b.debut, b.uuid, b.indice))
 

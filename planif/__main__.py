@@ -57,7 +57,7 @@ from planif.solveur import Bloc, Plan, completer, resoudre
 from planif.dues import oublier_dues_calculees
 from planif.sortie import ecrire_due, ecrire_json, ecrire_scheduled
 from planif.reunions import reunions as charger_reunions
-from planif.tampon import limites_effectives
+from planif.tampon import limites_effectives, separer_passe1_passe2
 from planif.taskwarrior import charger_taches
 from planif.verifications import CODES, pre_verifications
 
@@ -444,8 +444,11 @@ def main(argv=None):
     horizon_detaille_fin = t0 + timedelta(days=horizon_detaille_jours)
     reunions = charger_reunions(t0, horizon_fin, source=args.reunions)
 
-    taches_datees = [t for t in taches if t.due is not None]
-    taches_non_datees = [t for t in taches if t.due is None]
+    # La passe 1 = taches datees UNION leurs predecesseurs transitifs, pas
+    # seulement `t.due is not None` : sinon un predecesseur non date d'une
+    # tache datee part en passe 2, qui ne le contraint jamais a finir avant
+    # son successeur (planif/tampon.py::separer_passe1_passe2).
+    taches_datees, taches_non_datees = separer_passe1_passe2(taches)
 
     debut_passe1 = time.perf_counter()
     plan = resoudre(taches_datees, config.contextes, t0, maintenant, horizon_fin,

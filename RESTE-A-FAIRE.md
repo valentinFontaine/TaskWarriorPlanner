@@ -362,26 +362,58 @@ E1 et E2 suffisent pour commencer à s'en servir. E3 et E4 ferment la boucle.
   calcul (empreinte `uuid|modified`).
 
 **Run de nuit n°3 (24/09)** : étapes 0 à 6 faites (B `6334ef6`..`f6193d1`,
-A `be7fc84`..`f0715ce`), détail dans `RAPPORT-NUIT-3.md`. Quatre points ouverts :
+A `be7fc84`..`f0715ce`), détail dans `RAPPORT-NUIT-3.md`. Quatre points trouvés,
+**les quatre sont désormais résolus** :
 
-1. **`+fige` ignoré en passe 2** : Valider a ramené deux tâches figées à la
-   main à leur créneau d'origine. Contradiction entre « Valider écrit le plan
-   affiché » et « une tâche figée ne bouge plus ».
-2. **Précédence perdue** (défaut antérieur, grave) : seules les tâches datées
-   entrent en passe 1 ; leurs prédécesseurs sans échéance tombent en passe 2
-   et la précédence disparaît. Sur la base de test, 23 tâches seulement dans
-   le plan, et les 5 `+externe` absentes.
+1. **`+fige` ignoré en passe 2**, RÉSOLU : commit `2a6f091` du planificateur
+   (bloc 0 d'une `+fige` = fait constant dans les deux passes ; suite
+   optionnelle ; `--appliquer` ne réécrit jamais une `+fige`) et commit
+   `d8d9221` de WebTaskManager (Valider refuse un plan INFEASIBLE/UNKNOWN/
+   MODEL_INVALID, la page affiche le statut). Scénario de la nuit rejoué sur
+   la base de test : FEASIBLE, les figées restent à leur `scheduled`.
+2. **Précédence perdue** (défaut antérieur, grave), RÉSOLU : commit `b2c395e`
+   du planificateur (« Précédence : les prédécesseurs d'une tâche datée
+   entrent en passe 1 »). Deux défauts : les prédécesseurs transitifs d'une
+   tâche datée étaient envoyés en passe 1 ; une tâche détaillée pouvait
+   déborder au-delà de la frontière des 14 jours en régime agrégé (avant :
+   INFEASIBLE et plan vide). Sur la base de test : 23/50 → 43/50 tâches
+   planifiées, `+externe` 0/5 → 5/5, 0 violation de précédence ; coût passe 1
+   1 s → 11 s, statut FEASIBLE (cohérent avec B4).
 3. **Un `+fige` sur une tâche à précision « jour » rend la passe 1
-   infaisable** (16 tâches placées → 0) ; l'interface affiche pourtant
-   « Calcul terminé » et Valider accepte d'écrire ce plan.
+   infaisable**, RÉSOLU dans le même commit `2a6f091` que le point 1.
 4. **`modify -TAGS` ne fait rien** sur Taskwarrior 3.5 (code 0, mesuré le
-   24/09) : `PUT /api/task/{id}/modify` (`main_fastapi.py:725`) ne peut pas
-   retirer un tag décoché dans l'éditeur. `-<tag>` et `tags:` fonctionnent.
+   24/09), RÉSOLU : commit `59d0073` de WebTaskManager. Correction du
+   diagnostic : de bout en bout le retrait de tag marchait déjà via
+   `repair_text_fields` (réimport complet de la tâche) ; corrigé quand même
+   (une commande `-t`/`+t`) et ajout d'une validation des tags avant le shell
+   (injection possible avant). Vérification sur le téléphone : plus
+   nécessaire pour `-TAGS` (on n'utilise plus que `-t`/`+t`, validés partout).
+
+**Défaut révélé en chemin, RÉSOLU dans `2a6f091`** : en passe 2, une candidate
+d'urgence nulle ou négative (une tâche bloquée prend -5) n'était jamais placée.
+
+Aussi : test Playwright `task-manager.spec.js:1085` sensible à l'heure corrigé
+(WebTaskManager `0944d37`).
 
 Faits mesurés qui en découlent : `plan.json` ne porte pas les `due` (à
-ajouter) ; `PUT /api/task/{id}/modify` efface les tags avant de les réécrire
-(ne pas s'en servir pour figer) ; `+fige` n'impose que le début du bloc 0, donc
-seul ce bloc est déplaçable. Run de nuit n°3 préparé : `PROMPT-NUIT-3.md`.
+ajouter) ; `+fige` n'impose que le début du bloc 0, donc seul ce bloc est
+déplaçable.
+
+**Points ouverts qui en découlent :**
+
+- une passe 1 surchargée **sans** `+fige` (deux tâches qui se disputent la
+  seule fenêtre, ou charge datée > capacité de tout l'horizon) peut encore
+  être INFEASIBLE : piste = rendre chaque bloc de passe 1 optionnel avec une
+  forte pénalité d'absence ; à lier à la variante « infaisable » de la base
+  de test.
+- message de refus de Valider : dit « infaisable » même pour UNKNOWN (qui
+  veut dire « pas de solution trouvée dans le budget ») — à reformuler.
+- `PUT /api/task/{id}/modify` et d'autres routes de `main_fastapi.py` passent
+  `task_id` brut à un shell (`shell=True`) sans validation d'uuid,
+  contrairement à `/depends`.
+- suite Playwright complète à relancer sur une base remplie
+  (`TASKRC=C:/Users/irpaui/taskwarrior-dev/taskrc npm test`) : non revalidée
+  cette session.
 
 
 ---

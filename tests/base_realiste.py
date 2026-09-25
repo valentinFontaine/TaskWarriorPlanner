@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from pathlib import Path
 
@@ -62,6 +62,16 @@ def _nieme_jour_a_venir(aujourdhui, jour_semaine, n):
         if jour.weekday() == jour_semaine:
             trouves += 1
     return jour
+
+
+def _due_tw_18h_local(jour):
+    """Ecrit un `due` PROPRE (pas une echeance de projet) au format Taskwarrior
+    UTC (`FORMAT_TW`) pour une heure locale de 18:00, meme convention que
+    `tests/test_ecriture_due.py` (`instant_local_naif.astimezone(timezone.utc)`)
+    -- PAS la conversion naive-directe utilisee ailleurs dans ce module pour
+    `scheduled` : l'heure locale affichee doit etre 18:00, pas l'heure UTC."""
+    instant_local_naif = datetime.combine(jour, dtime(18, 0))
+    return instant_local_naif.astimezone(timezone.utc).strftime(FORMAT_TW)
 
 
 LUNDI, VENDREDI = 0, 4
@@ -134,9 +144,15 @@ def _specs(aujourdhui):
         dict(description="Fabrication axe pompe",
              project="NPD.Vulcan.revueA", tags=("pro", "externe"), jours=18,
              depends=("Etablir devis fabrication axe pompe",)),
+        # due propre (retard force, cf. S5 plus bas) : le N-ieme vendredi a
+        # venir avec N=6 (~6 semaines) -- constate tenable (marge >= 7 j,
+        # >= 10 j sur la fenetre LUNDI_FIXE) sur les 7 jours de lancement
+        # testes par tests/test_base_realiste_retard_force.py ; N=5 ne
+        # suffit pas (marge aussi basse que 3 j un jour sur 7).
         dict(description="Controler reception axe pompe",
              project="NPD.Vulcan.revueA", tags=("pro",), heures=2,
-             depends=("Fabrication axe pompe",)),
+             depends=("Fabrication axe pompe",),
+             due_nieme_vendredi=6),
     ]
     for nom in ("Verifier tolerances plan ensemble",
                 "Actualiser nomenclature carter",
@@ -177,6 +193,17 @@ def _specs(aujourdhui):
     # Situation reelle : le montage d'un prototype ne peut demarrer qu'une
     # fois le plan pret ET les pieces sous-traitees ET le moteur commande
     # arrives : convergence de trois chaines, dont deux +externe.
+    #
+    # RETARD FORCE (voulu, ajoute a la main par l'utilisateur dans sa vraie
+    # base, cf. tests/test_base_realiste_retard_force.py) : "Assembler
+    # prototype" recoit trois dependances supplementaires depuis S4 (les
+    # plans de detail axe/joint/flasque) et depuis S2 (l'essai fonctionnel
+    # carter), en plus des trois dependances d'origine. Consequence :
+    # "Assembler prototype" n'est plus terminale de NPD.Orion (S5 la fait
+    # desormais preceder "Monter assemblage") ; le plus long chemin qui passe
+    # par "Commande moteur fournisseur" (+externe, P20D) se retrouve reporte
+    # sur "Monter assemblage", qui porte le due propre force en retard
+    # (voir S5).
     # -----------------------------------------------------------------
     specs += [
         dict(description="Plan de detail support moteur",
@@ -189,7 +216,11 @@ def _specs(aujourdhui):
              project="NPD.Orion.montage", tags=("pro",), heures=8,
              depends=("Plan de detail support moteur",
                       "Usinage sous-traite support",
-                      "Commande moteur fournisseur")),
+                      "Commande moteur fournisseur",
+                      "Plan de detail axe",
+                      "Plan de detail joint",
+                      "Plan de detail flasque",
+                      "Essai fonctionnel carter")),
     ]
 
     # -----------------------------------------------------------------
@@ -230,9 +261,21 @@ def _specs(aujourdhui):
         dict(description="Devis fournisseur assemblage",
              project="NPD.Orion.achats", tags=("pro",), heures=2,
              depends=("Definir concept assemblage",)),
+        # RETARD FORCE (voulu) : "Monter assemblage" recoit desormais aussi
+        # "Assembler prototype" comme dependance (ajoutee a la main par
+        # l'utilisateur, cf. tests/test_base_realiste_retard_force.py), et un
+        # due propre : le N-ieme vendredi a venir avec N=3, choisi pour que le
+        # retard soit force sur les 7 jours de lancement testes (marge
+        # `_marge_chemin_critique` negative, -11 a -5 j sur la fenetre
+        # LUNDI_FIXE) tout en restant proche de l'ordre de grandeur mesure par
+        # l'utilisateur avec le vrai solveur (2,7 a 4,7 j de retard) ; N=4
+        # n'est plus force tous les jours, N=1/2 s'eloignent trop de l'ordre
+        # de grandeur reel.
         dict(description="Monter assemblage",
              project="NPD.Orion.montage", tags=("pro",), heures=5,
-             depends=("Plan de detail bati", "Devis fournisseur assemblage")),
+             depends=("Plan de detail bati", "Devis fournisseur assemblage",
+                      "Assembler prototype"),
+             due_nieme_vendredi=3),
     ]
 
     # -----------------------------------------------------------------
@@ -367,6 +410,10 @@ def generer(aujourdhui=None):
         if offset is not None:
             planifie = datetime.combine(aujourdhui + timedelta(days=offset), dtime(9, 0))
             tache["scheduled"] = planifie.strftime(FORMAT_TW)
+        n_vendredi = spec.get("due_nieme_vendredi")
+        if n_vendredi is not None:
+            jour_due = _nieme_jour_a_venir(aujourdhui, VENDREDI, n_vendredi)
+            tache["due"] = _due_tw_18h_local(jour_due)
         taches.append(tache)
 
     config = {"timeSlots": _grille_config(), "freeTimeHours": 2}

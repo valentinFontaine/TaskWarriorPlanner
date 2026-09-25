@@ -421,6 +421,15 @@ déplaçable.
   non.
 - WebTaskManager, import CSV : la détection de cycles inclut les dépends des
   tâches deleted ; faux refus possible, jamais d'écriture fautive.
+- WebTaskManager : les messages de confirmation (ex. « tâche créée ») s'affichent
+  sous la barre de navigation et sont cachés par elle. Signalé par l'utilisateur
+  le 2026-09-25, non traité.
+- WebTaskManager, page Graphe : on ne peut pas modifier une tâche depuis le
+  graphe. Le bouton stylo existe pourtant depuis H3 (ee0eb9c,
+  tests/graphe-edition.spec.js) : à investiguer comme une régression ou un cas
+  non couvert (par ex. depuis b6ca1e5, qui a ajouté un second éditeur générique
+  sur la page, ou l'enregistrement qui ne rafraîchit pas). Signalé par
+  l'utilisateur le 2026-09-25, non traité.
 
 
 ---

@@ -414,6 +414,13 @@ déplaçable.
 - suite Playwright complète à relancer sur une base remplie
   (`TASKRC=C:/Users/irpaui/taskwarrior-dev/taskrc npm test`) : non revalidée
   cette session.
+- WebTaskManager : TaskEditor.show() est un no-op silencieux tant que le
+  template de sa modale (chargé par fetch dans createModal) n'est pas arrivé :
+  un clic très rapide après le chargement d'une page peut ne rien ouvrir. Le
+  bouton Add task de la nav l'attend (b6ca1e5), mais les autres appels à show()
+  non.
+- WebTaskManager, import CSV : la détection de cycles inclut les dépends des
+  tâches deleted ; faux refus possible, jamais d'écriture fautive.
 
 
 ---

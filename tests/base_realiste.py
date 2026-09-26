@@ -64,14 +64,20 @@ def _nieme_jour_a_venir(aujourdhui, jour_semaine, n):
     return jour
 
 
+def _tw_local(instant_local_naif):
+    """Serialise un instant LOCAL naif (heure voulue) au format Taskwarrior UTC
+    (`FORMAT_TW`) : Taskwarrior stocke ses champs-date en UTC, donc l'heure locale
+    voulue doit etre convertie, pas ecrite telle quelle (sinon 08:00 local devient
+    08:00 UTC, soit 09:00 ou 10:00 local une fois relu)."""
+    return instant_local_naif.astimezone(timezone.utc).strftime(FORMAT_TW)
+
+
 def _due_tw_18h_local(jour):
     """Ecrit un `due` PROPRE (pas une echeance de projet) au format Taskwarrior
     UTC (`FORMAT_TW`) pour une heure locale de 18:00, meme convention que
-    `tests/test_ecriture_due.py` (`instant_local_naif.astimezone(timezone.utc)`)
-    -- PAS la conversion naive-directe utilisee ailleurs dans ce module pour
-    `scheduled` : l'heure locale affichee doit etre 18:00, pas l'heure UTC."""
+    `tests/test_ecriture_due.py` (`instant_local_naif.astimezone(timezone.utc)`)."""
     instant_local_naif = datetime.combine(jour, dtime(18, 0))
-    return instant_local_naif.astimezone(timezone.utc).strftime(FORMAT_TW)
+    return _tw_local(instant_local_naif)
 
 
 LUNDI, VENDREDI = 0, 4
@@ -398,7 +404,7 @@ def generer(aujourdhui=None):
             "uuid": index_uuid[spec["description"]],
             "description": spec["description"],
             "status": "pending",
-            "entry": entree.strftime(FORMAT_TW),
+            "entry": _tw_local(entree),
             "project": spec["project"],
             "estTime": _duree_iso(heures=spec.get("heures"), jours=spec.get("jours")),
             "tags": list(spec["tags"]),
@@ -409,7 +415,7 @@ def generer(aujourdhui=None):
         offset = spec.get("scheduled_offset")
         if offset is not None:
             planifie = datetime.combine(aujourdhui + timedelta(days=offset), dtime(9, 0))
-            tache["scheduled"] = planifie.strftime(FORMAT_TW)
+            tache["scheduled"] = _tw_local(planifie)
         n_vendredi = spec.get("due_nieme_vendredi")
         if n_vendredi is not None:
             jour_due = _nieme_jour_a_venir(aujourdhui, VENDREDI, n_vendredi)

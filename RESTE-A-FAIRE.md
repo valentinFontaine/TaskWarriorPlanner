@@ -707,3 +707,19 @@ capacité est fausse.
 **Et le « replier pour les chefs » est une règle d'affichage**, pas de modèle :
 agréger à une profondeur de projet donnée. Ça vaut pour le Gantt comme pour le
 rapport — et ça marche tout seul avec des sous-projets, pas avec un UDA.
+
+## Qualité du plan en régime agrégé — mesuré, arrêté le 2026-09-29
+
+Mesures sur la base de test uniquement (t0 figé, instance « copie ») ; les données réelles ne servent pas de référence (base à nettoyer, G2).
+
+| Variante | Retard total (créneaux) | Statut passe 1 | Temps total |
+|---|---|---|---|
+| actuel | 1814 | FEASIBLE | 30 s |
+| V1 borne de retard par tâche en résolution 2 | 1814 (7 en retard au lieu de 9) | FEASIBLE | 26 s |
+| V8 horizon détaillé 21 j | 786 | OPTIMAL | 23 s |
+| V6 horizon détaillé 28 j | 1366 | OPTIMAL | 27 s |
+| sans agrégation | 528 | OPTIMAL après escalade | 63 s |
+
+- V1 corrige une vraie redistribution (résolution 2 ne borne que la somme : une tâche terminale absorbe le retard des autres). Contrat commencé, non fini : `tests/test_retard_par_tache.py` (non suivi, non vérifié).
+- V6/V8 rendent le banc de perf INFEASIBLE : non compris, peut-être une erreur du harnais. À vérifier avant toute décision.
+- Pas prioritaire : la demande était d'afficher le retard (fait, WebTaskManager 2d9d0db, 04ab301).

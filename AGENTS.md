@@ -45,8 +45,9 @@ commande exploratoire ne la vise. Bases jetables : `taskwarrior-dev`, `taskwarri
 `tmp_path`. `TASKDATA` hérité l'emporte sur le `data.location` du taskrc : vérifier la base
 effective avec `task rc:<taskrc> _get rc.data.location`.
 
-Quand le téléphone sera réparé, une prod y reviendra **en binôme** avec celle du PC, sur la
-même base synchronisée par **Syncthing** (préalables : `WebTaskManager/AGENTS.md` §2). Une
+La prod compte trois pairs sur une même base synchronisée par **Syncthing** : ce PC, le PC
+Arch et, une fois réparé, le téléphone ; l'utilisateur lance les outils sur la machine où il
+travaille (préalables : `WebTaskManager/AGENTS.md` §2). Une
 commande d'écriture lancée sans isolation abîme des données réelles, que Syncthing propagera,
 et il n'y a pas de retour arrière.
 

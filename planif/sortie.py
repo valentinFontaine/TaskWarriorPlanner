@@ -40,12 +40,13 @@ Taskwarrior interprete une date sans fuseau.
 """
 import json
 import subprocess
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from planif.calendrier import instant_creneau
 from planif.dues import UDA as UDA_DUE_PLANIF
 from planif.dues import dues_calculees, est_calculee
+from planif.tampon import limites_effectives_avec_origine, separer_passe1_passe2
 from planif.taskwarrior import RC_MASSE, exporter
 
 __all__ = ["VERSION_FORMAT", "plan_en_dict", "ecrire_json", "ecrire_scheduled",
@@ -72,13 +73,32 @@ def _vers_utc_taskwarrior(instant_local_naif):
     return instant_local_naif.astimezone(timezone.utc).strftime(_FORMAT_TW)
 
 
-def plan_en_dict(plan, taches=None):
+def plan_en_dict(plan, taches=None, contextes=None):
     """Le plan sous forme de dict serialisable. C'est le contrat avec l'interface web.
 
     `taches` est optionnel : quand il est fourni, `description` et `projet` sont
     ajoutes pour que le fichier soit lisible par un humain. Quand il ne l'est
     pas, ces champs sont simplement **absents** — on n'invente jamais une
     description.
+
+    `contextes` est optionnel et **change le format** quand il est fourni :
+    chaque tache de `plan.en_retard` recoit alors `limite` (l'echeance
+    effective utilisee par le solveur pour decider du retard), `retard_minutes`
+    (fin du dernier bloc moins `limite`, en minutes) et `limite_heritee_de`
+    (uuid de la tache DATEE d'ou vient la limite, `None` si due propre). Ces
+    trois champs vont ensemble ou pas du tout, et n'apparaissent QUE pour les
+    uuids de `en_retard`. Sans `contextes` (defaut `None`), le format est
+    strictement celui d'avant.
+
+    La limite est calculee avec `planif.tampon.limites_effectives_avec_origine`
+    et `tampon=timedelta(0)` -- exactement comme `planif/solveur.py::resoudre`
+    calcule les limites qui decident de `en_retard` -- et sur les MEMES taches
+    que celles soumises a cette passe (`planif.tampon.separer_passe1_passe2`
+    applique a `taches` en isole le sous-ensemble) : reutiliser le tampon par
+    defaut de 24 h, ou toutes les taches (y compris celles de la passe 2, qui
+    n'ont pas de due et ne peuvent donc pas changer le resultat mais ne sont
+    pas la liste qu'a vue le solveur), rendrait `retard_minutes` incoherent
+    avec `en_retard`.
 
     Chaque bloc porte ses trois drapeaux explicitement (`externe`, `agrege`,
     `opportuniste`) : un consommateur ne doit jamais avoir a les recalculer.
@@ -107,6 +127,14 @@ def plan_en_dict(plan, taches=None):
     par_uuid = {t.uuid: t for t in (taches or [])}
     taches_json = {}
     dues = dues_calculees(plan, taches or [])
+    en_retard = set(plan.en_retard)
+
+    limites_origine = {}
+    if contextes is not None and taches:
+        passe1, _passe2 = separer_passe1_passe2(taches)
+        if passe1:
+            limites_origine = limites_effectives_avec_origine(
+                passe1, contextes, tampon=timedelta(0))
 
     for bloc in plan.blocs:
         entree = taches_json.setdefault(bloc.uuid, {"blocs": []})
@@ -132,6 +160,14 @@ def plan_en_dict(plan, taches=None):
                 entree["description"] = tache.description
             if tache.projet:
                 entree["projet"] = tache.projet
+        if contextes is not None and uuid in en_retard:
+            limite, origine = limites_origine.get(uuid, (None, None))
+            if limite is not None:
+                fin = datetime.fromisoformat(entree["fin"])
+                entree["limite"] = limite.isoformat()
+                entree["retard_minutes"] = round(
+                    (fin - limite).total_seconds() / 60)
+                entree["limite_heritee_de"] = origine
 
     return {
         "version": VERSION_FORMAT,
@@ -144,25 +180,28 @@ def plan_en_dict(plan, taches=None):
     }
 
 
-def serialiser(plan, taches=None):
+def serialiser(plan, taches=None, contextes=None):
     """Rend la chaine JSON, **stable octet pour octet** pour une meme entree.
 
     `sort_keys=True` et un `indent` fixe : c'est ce qui rend l'idempotence de
     `ecrire_json` testable autrement que par la parole.
     """
-    return json.dumps(plan_en_dict(plan, taches), sort_keys=True, indent=2,
-                      ensure_ascii=False) + "\n"
+    return json.dumps(plan_en_dict(plan, taches, contextes), sort_keys=True,
+                      indent=2, ensure_ascii=False) + "\n"
 
 
-def ecrire_json(plan, chemin, taches=None):
+def ecrire_json(plan, chemin, taches=None, contextes=None):
     """Ecrit le plan en JSON. Rend True si le fichier a change, False sinon.
 
     Idempotent : on compare au contenu existant et on **n'ouvre meme pas le
     fichier en ecriture** s'il est deja a jour, pour que son `mtime` ne bouge
     pas. Un test le verifie sur le `mtime`, pas sur la valeur de retour.
+
+    `contextes` est un simple relai vers `plan_en_dict` (voir sa docstring) :
+    omis, le format ecrit est strictement celui d'avant.
     """
     chemin = Path(chemin)
-    contenu = serialiser(plan, taches)
+    contenu = serialiser(plan, taches, contextes)
     if chemin.exists():
         try:
             if chemin.read_text(encoding="utf-8") == contenu:

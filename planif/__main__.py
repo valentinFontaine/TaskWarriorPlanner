@@ -493,7 +493,8 @@ def main(argv=None):
 
     # --- 6. ecriture --------------------------------------------------------
     chemin_sortie = Path(args.sortie)
-    change = ecrire_json(plan, chemin_sortie, taches=taches)
+    change = ecrire_json(plan, chemin_sortie, taches=taches,
+                        contextes=config.contextes)
     print("Plan ecrit dans {} ({}).".format(
         chemin_sortie, "modifie" if change else "inchange"))
 

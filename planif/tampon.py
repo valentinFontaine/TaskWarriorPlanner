@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 from planif.taskwarrior import vers_local_naif
 
 __all__ = ["CycleDependances", "echeance_effective", "limites_effectives",
-           "separer_passe1_passe2"]
+           "limites_effectives_avec_origine", "separer_passe1_passe2"]
 
 # Tampon fixe du cahier des charges : 24 heures avant l'echeance reelle.
 TAMPON = timedelta(hours=24)
@@ -89,23 +89,20 @@ def _contexte_de(tache, contextes):
     return next(iter(contextes.values()))
 
 
-def limites_effectives(taches, contextes, tampon=TAMPON):
-    """Rend uuid -> datetime (ou None) : la date de fin au plus tard de chaque tache.
+def limites_effectives_avec_origine(taches, contextes, tampon=TAMPON):
+    """Comme `limites_effectives`, mais rend en plus la PROVENANCE de chaque limite.
 
-    - Une tache qui porte un `due` reel recoit `echeance_effective(due)`.
-    - Une tache sans `due` herite de la limite de ses successeurs, SANS
-      re-tamponner : limite(i) = min sur les successeurs j de limite(j).
-    - Quand une tache a les deux (un `due` propre ET des successeurs dates),
-      on prend le min des deux.
-    - Une tache sans `due` et sans successeur date recoit None.
+    Rend uuid -> (limite, origine) :
 
-    `tache.depends` contient les uuids des PREDECESSEURS de la tache (ce
-    dont elle depend). Le graphe des successeurs est donc l'inverse de
-    `depends` : si B.depends contient A.uuid, alors A precede B, et B est un
-    successeur de A.
+    - `limite` : identique a ce que rend `limites_effectives` (voir sa
+      docstring pour la regle) ;
+    - `origine` : `None` quand `limite` vient du `due` PROPRE de la tache (ou
+      qu'il n'y a pas de limite), sinon l'uuid de la tache DATEE dont la
+      limite est finalement heritee -- en remontant au besoin plusieurs
+      crans de succession, jamais l'intermediaire immediat seul.
 
-    Leve `CycleDependances` si le graphe des successeurs contient un cycle
-    (evite une recursion infinie).
+    `limites_effectives` est un simple projet de cette fonction sur son
+    premier element : son resultat ne change pas.
     """
     par_uuid = {t.uuid: t for t in taches}
 
@@ -128,20 +125,26 @@ def limites_effectives(taches, contextes, tampon=TAMPON):
         en_cours.add(uuid)
 
         tache = par_uuid[uuid]
-        candidats = []
+        candidats = []   # liste de (valeur, origine)
 
         if tache.due is not None:
-            candidats.append(
+            candidats.append((
                 echeance_effective(tache.due, _contexte_de(tache, contextes),
-                                   tampon)
-            )
+                                   tampon),
+                None,
+            ))
 
         for succ in successeurs[uuid]:
-            limite_succ = limite_de(succ)
-            if limite_succ is not None:
-                candidats.append(limite_succ)
+            valeur_succ, origine_succ = limite_de(succ)
+            if valeur_succ is not None:
+                # origine_succ est None quand c'est le due PROPRE de `succ`
+                # qui a gagne : dans ce cas c'est `succ` lui-meme la tache
+                # datee d'origine. Sinon on relaie l'origine deja remontee.
+                candidats.append(
+                    (valeur_succ, succ if origine_succ is None else origine_succ)
+                )
 
-        resultat = min(candidats) if candidats else None
+        resultat = min(candidats, key=lambda c: c[0]) if candidats else (None, None)
 
         en_cours.discard(uuid)
         resultats[uuid] = resultat
@@ -151,6 +154,28 @@ def limites_effectives(taches, contextes, tampon=TAMPON):
         limite_de(uuid)
 
     return resultats
+
+
+def limites_effectives(taches, contextes, tampon=TAMPON):
+    """Rend uuid -> datetime (ou None) : la date de fin au plus tard de chaque tache.
+
+    - Une tache qui porte un `due` reel recoit `echeance_effective(due)`.
+    - Une tache sans `due` herite de la limite de ses successeurs, SANS
+      re-tamponner : limite(i) = min sur les successeurs j de limite(j).
+    - Quand une tache a les deux (un `due` propre ET des successeurs dates),
+      on prend le min des deux.
+    - Une tache sans `due` et sans successeur date recoit None.
+
+    `tache.depends` contient les uuids des PREDECESSEURS de la tache (ce
+    dont elle depend). Le graphe des successeurs est donc l'inverse de
+    `depends` : si B.depends contient A.uuid, alors A precede B, et B est un
+    successeur de A.
+
+    Leve `CycleDependances` si le graphe des successeurs contient un cycle
+    (evite une recursion infinie).
+    """
+    return {uuid: valeur for uuid, (valeur, _origine)
+           in limites_effectives_avec_origine(taches, contextes, tampon).items()}
 
 
 def separer_passe1_passe2(taches):

@@ -585,7 +585,9 @@ testé que sur une base vide, où un effacement prématuré est invisible.
 ### G2. Le nettoyage de la vraie base
 
 Séparé, et c'est du travail utilisateur : renommages de projets, `estTime`
-manquantes, échéances dépassées, nouveaux projets. Les commandes `task` peuvent
+manquantes, échéances dépassées, nouveaux projets. La vraie base est désormais
+`C:/Users/irpaui/taskwarrior-prod` (prod sur le PC depuis le 2026-09-29) ;
+`taskWarrior-copie` en est une copie plus ancienne, lecture seule. Les commandes `task` peuvent
 être préparées ici ; **c'est lui qui les lance.**
 
 ---

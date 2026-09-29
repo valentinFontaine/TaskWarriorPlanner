@@ -38,9 +38,20 @@ positionné sur une base jetable.**
 $env:TASKRC = 'C:/Users/irpaui/taskwarrior-dev/taskrc'
 ```
 
-La vraie base de l'utilisateur est synchronisée par **Syncthing sur trois machines**. Une
-commande d'écriture lancée sans isolation abîme des données réelles, et il n'y a pas de retour
-arrière.
+**Depuis le 2026-09-29, la vraie base est sur ce PC** : `C:/Users/irpaui/taskwarrior-prod`
+(le téléphone est cassé, ce PC sert l'usage quotidien). Aucun test, aucune mesure, aucune
+commande exploratoire ne la vise. Bases jetables : `taskwarrior-dev`, `taskwarrior-test`
+(rechargée par `outils/recharger-base-test.py`, **seule référence de mesure**), ou un
+`tmp_path`. `TASKDATA` hérité l'emporte sur le `data.location` du taskrc : vérifier la base
+effective avec `task rc:<taskrc> _get rc.data.location`.
+
+Quand le téléphone sera réparé, une prod y reviendra **en binôme** avec celle du PC, sur la
+même base synchronisée par **Syncthing** (préalables : `WebTaskManager/AGENTS.md` §2). Une
+commande d'écriture lancée sans isolation abîme des données réelles, que Syncthing propagera,
+et il n'y a pas de retour arrière.
+
+Le serveur de prod du PC peut tourner pendant qu'on travaille : ne jamais tuer un processus
+qu'on n'a pas lancé (jamais `taskkill /IM python.exe`).
 
 Cela vaut aussi pour l'exploration : un `task export` de vérification se lance avec `TASKRC`
 posé, comme le reste.

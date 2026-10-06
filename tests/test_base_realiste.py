@@ -67,7 +67,7 @@ AMBIGUITES TRANCHEES
 
 - "chaines les plus longues... different d'au moins un facteur 2" (motif meme
   echeance) : la longueur d'une chaine est la somme des `estTime` (en heures,
-  taches +externe converties heures->jours*24 pour rester dans la meme unite)
+  taches +external converties heures->jours*24 pour rester dans la meme unite)
   le long du chemin de poids maximal, calculee ici meme dans le test (fonction
   `_chemin_le_plus_long`), jamais lue dans une sortie du planificateur.
 - "capacite de C entre le lendemain et E" (regle de marge) : intervalle
@@ -89,7 +89,7 @@ AMBIGUITES TRANCHEES
   dans le planificateur) en avancant un curseur de date jour par jour a partir
   du lendemain d'aujourd'hui, consommant pour chaque tache utilisateur la
   capacite NETTE (grille moins marge) des jours ouverts de son contexte
-  jusqu'a epuiser son `estTime`, et pour chaque tache +externe en jours
+  jusqu'a epuiser son `estTime`, et pour chaque tache +external en jours
   calendaires bruts (aucun jour n'est saute). La marge est
   `(E.date() - curseur_final).days`.
 - une tache qui porte son propre `due` (hors cle de `base.echeances`) est
@@ -143,11 +143,11 @@ def _heures(estTime):
 
 
 def _est_externe(tache):
-    return "externe" in tache.get("tags", ())
+    return "external" in tache.get("tags", ())
 
 
 def _est_fige(tache):
-    return "fige" in tache.get("tags", ())
+    return "fixed" in tache.get("tags", ())
 
 
 def _contexte_de(tache, contextes_connus):
@@ -249,7 +249,7 @@ def _graphe_successeurs(taches):
 
 def _duree_tache_heures(tache):
     """Duree utilisee pour COMPARER des chemins (pas pour la simulation
-    calendaire) : tout est ramene a des heures, +externe compris (24 h/jour)."""
+    calendaire) : tout est ramene a des heures, +external compris (24 h/jour)."""
     heures = _heures(tache["estTime"])
     return heures
 
@@ -279,7 +279,7 @@ def _chemin_le_plus_long(taches, uuid_cible):
 
 def _jours_calendaires_pour_tache(tache, contexte_nom, config, depart):
     """Avance `depart` (une date) du temps que prend `tache`, et rend la date
-    d'arrivee. Taches +externe : jours calendaires bruts. Taches utilisateur :
+    d'arrivee. Taches +external : jours calendaires bruts. Taches utilisateur :
     consomme la capacite NETTE (grille moins marge) de chaque jour ouvert du
     contexte."""
     if _est_externe(tache):
@@ -299,7 +299,7 @@ def _jours_calendaires_pour_tache(tache, contexte_nom, config, depart):
 
 
 def _predecesseurs_transitifs_non_externes(uuid_depart, index):
-    """uuid + tous ses predecesseurs transitifs, filtres sur les non-+externe,
+    """uuid + tous ses predecesseurs transitifs, filtres sur les non-+external,
     pour le "travail" d'une tache qui porte son propre `due`."""
     vus = set()
     a_visiter = [uuid_depart]
@@ -388,7 +388,7 @@ def test_determinisme_uuid_jours_differents():
 # ---------------------------------------------------------------------------
 
 def test_motif_convergence_avec_externe():
-    """Au moins une tache avec >= 3 depends, dont au moins un +externe."""
+    """Au moins une tache avec >= 3 depends, dont au moins un +external."""
     base = generer(LUNDI_FIXE)
     index = _index_par_uuid(base.taches)
     trouve = False
@@ -409,7 +409,7 @@ def test_motif_divergence():
 
 def test_motif_meme_echeance_chaines_de_longueurs_differentes():
     """>= 2 projets racine distincts a la meme echeance, chaines les plus
-    longues differant d'un facteur >= 2, l'un des deux avec un +externe."""
+    longues differant d'un facteur >= 2, l'un des deux avec un +external."""
     base = generer(LUNDI_FIXE)
     par_date = {}
     for projet, valeur in base.echeances.items():
@@ -436,7 +436,7 @@ def test_motif_meme_echeance_chaines_de_longueurs_differentes():
             b_externe = any(_est_externe(t) for t in taches_b)
             if longue >= 2 * court and (a_externe or b_externe):
                 return
-    pytest.fail("aucune paire de projets a meme echeance avec chaines x2 et un +externe")
+    pytest.fail("aucune paire de projets a meme echeance avec chaines x2 et un +external")
 
 
 def test_motif_profondeur_trois_niveaux_avec_echeance_racine_seule():
@@ -517,7 +517,7 @@ def test_motif_sous_sous_projets():
 
 
 def test_motif_externe_intercale():
-    """Chaine utilisateur -> +externe -> utilisateur -> +externe."""
+    """Chaine utilisateur -> +external -> utilisateur -> +external."""
     base = generer(LUNDI_FIXE)
     index = _index_par_uuid(base.taches)
     for e2 in base.taches:
@@ -570,13 +570,13 @@ def test_motif_echeance_perso():
 
 
 def test_motif_tache_figee_avec_scheduled_futur():
-    """Au moins une tache +fige avec `scheduled` strictement apres aujourd'hui."""
+    """Au moins une tache +fixed avec `scheduled` strictement apres aujourd'hui."""
     base = generer(LUNDI_FIXE)
     for t in base.taches:
         if _est_fige(t) and t.get("scheduled"):
             if _tw_vers_date(t["scheduled"]) > LUNDI_FIXE:
                 return
-    pytest.fail("aucune tache +fige avec scheduled futur")
+    pytest.fail("aucune tache +fixed avec scheduled futur")
 
 
 # ---------------------------------------------------------------------------

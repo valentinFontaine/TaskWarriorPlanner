@@ -24,8 +24,8 @@ Trois genres d'elements sont poses en hypothese, ceux que `design.md` §6 cite
 dans son exemple de message :
 
 - `echeance`  : la contrainte « cette tache finit avant sa limite » ;
-- `figee`     : le debut impose d'une tache `+fige` ;
-- `insecable` : le fait qu'une tache `+insecable` tienne en un seul bloc.
+- `figee`     : le debut impose d'une tache `+fixed` ;
+- `insecable` : le fait qu'une tache `+nosplit` tienne en un seul bloc.
 
 Tout le reste (capacite quotidienne, non-chevauchement, precedences, grille)
 est **dur et non assumable** : ce sont les regles du monde, pas des exigences
@@ -124,7 +124,7 @@ def diagnostiquer(taches, contextes, t0, maintenant, horizon_fin, granularite,
     """
     # --- les pre-verifications d'abord, AVANT tout appel au solveur -------
     # design.md §6 : « Elles sont betes, rapides, et evitent un INFEASIBLE sans
-    # explication. » Une tache `+insecable` plus longue que la plus grande
+    # explication. » Une tache `+nosplit` plus longue que la plus grande
     # plage contigue en est le cas type.
     #
     # Ce n'est pas qu'une economie : c'est le SEUL moyen de la nommer. Pose en
@@ -190,7 +190,7 @@ def diagnostiquer(taches, contextes, t0, maintenant, horizon_fin, granularite,
         bloc_min = _en_creneaux(ctx.bloc_min, granularite)
         tailles = decouper_en_blocs(taille, bloc_min, insecable=tache.insecable)
 
-        # Une tache `+insecable` tient en un seul bloc. C'est une exigence
+        # Une tache `+nosplit` tient en un seul bloc. C'est une exigence
         # negociable (on peut la decouper), donc elle est posee en hypothese.
         presence = None
         if tache.insecable:

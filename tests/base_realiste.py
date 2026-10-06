@@ -137,7 +137,7 @@ def _specs(aujourdhui):
     # -----------------------------------------------------------------
     # S1 - deux livrables pour la meme revue (RESTE-A-FAIRE.md, tableau G1bis)
     # Situation reelle : deux projets doivent etre prets pour la meme revue de
-    # jalon. L'un est une chaine longue avec un delai fournisseur (+externe),
+    # jalon. L'un est une chaine longue avec un delai fournisseur (+external),
     # l'autre est une liste de petites verifications independantes. Les deux
     # partagent l'echeance : c'est le cas qui met les contextes en concurrence.
     # -----------------------------------------------------------------
@@ -148,7 +148,7 @@ def _specs(aujourdhui):
              project="NPD.Vulcan.revueA", tags=("pro",), heures=2,
              depends=("Finaliser plan de detail axe pompe",)),
         dict(description="Fabrication axe pompe",
-             project="NPD.Vulcan.revueA", tags=("pro", "externe"), jours=18,
+             project="NPD.Vulcan.revueA", tags=("pro", "external"), jours=18,
              depends=("Etablir devis fabrication axe pompe",)),
         # due propre (retard force, cf. S5 plus bas) : le N-ieme vendredi a
         # venir avec N=6 (~6 semaines) -- constate tenable (marge >= 7 j,
@@ -198,7 +198,7 @@ def _specs(aujourdhui):
     # S3 - montage prototype (RESTE-A-FAIRE.md, tableau G1bis)
     # Situation reelle : le montage d'un prototype ne peut demarrer qu'une
     # fois le plan pret ET les pieces sous-traitees ET le moteur commande
-    # arrives : convergence de trois chaines, dont deux +externe.
+    # arrives : convergence de trois chaines, dont deux +external.
     #
     # RETARD FORCE (voulu, ajoute a la main par l'utilisateur dans sa vraie
     # base, cf. tests/test_base_realiste_retard_force.py) : "Assembler
@@ -207,7 +207,7 @@ def _specs(aujourdhui):
     # carter), en plus des trois dependances d'origine. Consequence :
     # "Assembler prototype" n'est plus terminale de NPD.Orion (S5 la fait
     # desormais preceder "Monter assemblage") ; le plus long chemin qui passe
-    # par "Commande moteur fournisseur" (+externe, P20D) se retrouve reporte
+    # par "Commande moteur fournisseur" (+external, P20D) se retrouve reporte
     # sur "Monter assemblage", qui porte le due propre force en retard
     # (voir S5).
     # -----------------------------------------------------------------
@@ -215,9 +215,9 @@ def _specs(aujourdhui):
         dict(description="Plan de detail support moteur",
              project="NPD.Orion.plans", tags=("pro",), heures=5),
         dict(description="Usinage sous-traite support",
-             project="NPD.Orion.achats", tags=("pro", "externe"), jours=15),
+             project="NPD.Orion.achats", tags=("pro", "external"), jours=15),
         dict(description="Commande moteur fournisseur",
-             project="NPD.Orion.achats.commandes", tags=("pro", "externe"), jours=20),
+             project="NPD.Orion.achats.commandes", tags=("pro", "external"), jours=20),
         dict(description="Assembler prototype",
              project="NPD.Orion.montage", tags=("pro",), heures=8,
              depends=("Plan de detail support moteur",
@@ -288,19 +288,19 @@ def _specs(aujourdhui):
     # S6 - circuit d'achat (RESTE-A-FAIRE.md, tableau G1bis)
     # Situation reelle : demande de devis -> commande -> fabrication sous-
     # traitee -> controle reception. Chaine utilisateur/externe/utilisateur/
-    # externe (le devis et la fabrication sont +externe).
+    # externe (le devis et la fabrication sont +external).
     # -----------------------------------------------------------------
     specs += [
         dict(description="Definir besoin outillage montage",
              project="NPD.Triton.outillage", tags=("pro",), heures=2),
         dict(description="Devis fournisseur outillage",
-             project="NPD.Triton.outillage", tags=("pro", "externe", "serviceAchat"),
+             project="NPD.Triton.outillage", tags=("pro", "external", "serviceAchat"),
              jours=10, depends=("Definir besoin outillage montage",)),
         dict(description="Commander outillage montage",
              project="NPD.Triton.outillage", tags=("pro",), heures=1,
              depends=("Devis fournisseur outillage",)),
         dict(description="Fabrication outillage montage",
-             project="NPD.Triton.outillage", tags=("pro", "externe"), jours=15,
+             project="NPD.Triton.outillage", tags=("pro", "external"), jours=15,
              depends=("Commander outillage montage",)),
         dict(description="Controler reception outillage",
              project="NPD.Triton.outillage", tags=("pro",), heures=2,
@@ -352,11 +352,11 @@ def _specs(aujourdhui):
 
     # -----------------------------------------------------------------
     # S9 - creneau impose (RESTE-A-FAIRE.md, tableau G1bis)
-    # Situation reelle : une reunion client fixe un debut impose (+fige),
+    # Situation reelle : une reunion client fixe un debut impose (+fixed),
     # deux jours apres aujourd'hui.
     # -----------------------------------------------------------------
     specs.append(dict(description="Preparer salle reunion client",
-                       project="NPD.reunions", tags=("pro", "fige"), heures=1,
+                       project="NPD.reunions", tags=("pro", "fixed"), heures=1,
                        scheduled_offset=2))
 
     # ages de creation, assignes dans l'ordre de construction (deterministe,
@@ -371,7 +371,7 @@ def _echeances(aujourdhui):
     # N choisis larges expres : la regle de marge (G1bis point 5) doit tenir
     # meme au pire des 7 jours de lancement possibles, une semaine de
     # capacite deja retranchee par la regle elle-meme n'etant pas suffisante
-    # face a un delai +externe de plusieurs semaines dans la chaine.
+    # face a un delai +external de plusieurs semaines dans la chaine.
     e1 = _nieme_jour_a_venir(aujourdhui, VENDREDI, 7)
     e2 = _nieme_jour_a_venir(aujourdhui, VENDREDI, 12)
     e3 = _nieme_jour_a_venir(aujourdhui, VENDREDI, 9)

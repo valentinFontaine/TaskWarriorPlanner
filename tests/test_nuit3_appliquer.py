@@ -6,15 +6,15 @@ C'est ce que lance le bouton Valider (E4) : il ecrit **exactement le plan
 affiche**, pas un plan recalcule entre-temps. Le mode :
 
 - lit le fichier (version 1, sinon refus) ;
-- ecrit `scheduled` = debut du premier bloc de chaque tache non `+externe`
+- ecrit `scheduled` = debut du premier bloc de chaque tache non `+external`
   (`ecrire_scheduled`, comportement inchange) ;
 - ecrit `due` et `duePlanif` = le champ `"due"` de la tache dans le fichier
-  (`ecrire_due`, meme regles : `+externe` ignorees, `due` humaine jamais
+  (`ecrire_due`, meme regles : `+external` ignorees, `due` humaine jamais
   ecrasee, tache absente de la base ignoree). Une tache dont le `"due"` vaut
   `null` (passe 2) va dans `ignorees` pour la due ;
 - **ne calcule rien** : aucune grille, aucun solveur. Prouve ici en appliquant
   un bloc qu'aucun calcul ne produirait (un dimanche a 03:00) ;
-- **ne pose jamais `+fige`** (c'est E3 qui le fait) ;
+- **ne pose jamais `+fixed`** (c'est E3 qui le fait) ;
 - imprime sur stdout **un seul objet JSON** :
   `{"scheduled": {"modifiees": [...], "inchangees": [...], "ignorees": [...]},
     "due": {...meme forme...}}`, listes d'uuid. Chaque tache du fichier se
@@ -119,7 +119,7 @@ def _semer(base_jetable):
         dict(commun, uuid=U_HUMAINE, description="Due humaine", tags=["pro"],
              due=_tw(DUE_HUMAINE_POSEE)),
         dict(commun, uuid=U_EXTERNE, description="Fournisseur",
-             tags=["pro", "externe"]),
+             tags=["pro", "external"]),
         dict(commun, uuid=U_OPPORTUNISTE, description="Sans date",
              tags=["perso"]),
     ])
@@ -178,7 +178,7 @@ def test_une_tache_hors_du_fichier_n_est_pas_touchee(plan_applique):
 
 def test_jamais_de_fige_et_tags_inchanges(plan_applique):
     for uuid, tache in plan_applique["apres"].items():
-        assert "fige" not in (tache.get("tags") or [])
+        assert "fixed" not in (tache.get("tags") or [])
         assert set(tache.get("tags") or []) == \
             set(plan_applique["avant"][uuid].get("tags") or [])
 

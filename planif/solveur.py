@@ -7,7 +7,7 @@ Ce qui est ecrit ici couvre les lots 4 et 5 :
 
 - lot 4 : intervalles, fenetres, bloc minimum, `AddNoOverlap` sur la ressource
   unique, precedences, echeances, objectif lexicographique ;
-- lot 5 : les taches `+externe`. C'est une seule ligne de difference et c'est
+- lot 5 : les taches `+external`. C'est une seule ligne de difference et c'est
   tout le projet : leur intervalle est **absent** de `AddNoOverlap` et **absent**
   de la contrainte de capacite quotidienne. Elles prennent du temps sans prendre
   de capacite (proposal.md decision 10).
@@ -325,7 +325,7 @@ class Plan:
     def creneaux_par_jour(self, uuid=None):
         """date -> nombre de creneaux occupes ce jour-la par des blocs NON externes.
 
-        Les blocs `+externe` sont exclus **par definition** : ils ne consomment
+        Les blocs `+external` sont exclus **par definition** : ils ne consomment
         aucune capacite. C'est exactement ce que le controle du lot 5 mesure.
 
         On compte le **volume** de chaque bloc, pas l'union des instants
@@ -350,7 +350,7 @@ def _en_creneaux(duree, granularite):
 
 
 def _construire_bloc_fige(modele, nom, fixe, t_bloc, frontiere, agregation):
-    """Le bloc 0 d'une tache `+fige` avec `scheduled` est un FAIT, pas une
+    """Le bloc 0 d'une tache `+fixed` avec `scheduled` est un FAIT, pas une
     decision (tests/test_fige_fait.py) : un intervalle CONSTANT, commencant
     exactement a `fixe`, HORS du domaine des fenetres candidates.
 
@@ -395,7 +395,7 @@ def _consommer_capacite_figee(charge_figee, t0, granularite, contexte_nom,
 def decouper_en_blocs(taille_totale, bloc_min, insecable=False):
     """design.md §5, variables.
 
-    Un seul bloc si la tache est `+insecable` ou si elle tient dans le bloc
+    Un seul bloc si la tache est `+nosplit` ou si elle tient dans le bloc
     minimum. Sinon `k = ceil(estimated / bloc_min)` blocs : les `k-1` premiers de
     duree `bloc_min`, le dernier du reste.
     """
@@ -583,7 +583,7 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         blocs_modele[tache.uuid] = []
         starts_tache, ends_tache = [], []
 
-        # Le bloc 0 d'une tache `+fige` avec `scheduled` est un FAIT (contrainte
+        # Le bloc 0 d'une tache `+fixed` avec `scheduled` est un FAIT (contrainte
         # 8, tests/test_fige_fait.py) : `fin_fige` borne les blocs SUIVANTS de
         # la meme tache -- ils ne commencent jamais avant que le fait ne soit
         # termine.
@@ -822,7 +822,7 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
 
     # --- contrainte 4 : ressource unique -------------------------------------
     # Tout ce qui est la-dedans est du temps de l'utilisateur. Les taches
-    # `+externe` en sont absentes : c'est toute la difference (decision 10).
+    # `+external` en sont absentes : c'est toute la difference (decision 10).
     # Les blocs agreges en sont absents aussi, mais pour une autre raison : ils
     # sont au-dela de la frontiere, ou l'on ne repond plus a l'heure.
     if intervalles_ressource:
@@ -1054,7 +1054,7 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     #
     # C'est le « par urgence decroissante » du lot 6, jamais ecrit jusqu'ici.
     debuts_ponderes = []
-    # Le bloc 0 des taches `+fige` non datees soumises en passe 2 (probleme 1,
+    # Le bloc 0 des taches `+fixed` non datees soumises en passe 2 (probleme 1,
     # tests/test_fige_fait.py) : un FAIT construit avec `_construire_bloc_fige`,
     # au meme titre que les blocs de la passe 1 ci-dessus -- pas une candidate
     # que « au plus tot » pourrait deplacer.

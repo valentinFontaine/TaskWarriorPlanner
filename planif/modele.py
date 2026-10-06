@@ -21,10 +21,10 @@ def nom_jour(indice):
 class Marqueur(str, Enum):
     """design.md §2 — marqueurs, par tags."""
 
-    EXTERNE = "externe"      # pas realisee par l'utilisateur : hors non-chevauchement
-    INSECABLE = "insecable"  # un seul bloc
-    FIGE = "fige"            # debut impose (scheduled courant)
-    ASAP = "asap"            # exception au « au plus tard »
+    EXTERNE = "external"    # pas realisee par l'utilisateur : hors non-chevauchement
+    INSECABLE = "nosplit"   # un seul bloc
+    FIGE = "fixed"          # debut impose (scheduled courant)
+    ASAP = "asap"           # exception au « au plus tard »
 
 
 @dataclass(frozen=True, order=True)

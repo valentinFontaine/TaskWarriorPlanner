@@ -30,7 +30,7 @@ comportement, pas de le rendre vert.
 
    Consequence structurelle : "Assembler prototype" n'est plus terminale de
    NPD.Orion (Monter assemblage lui succede desormais) ; le plus long chemin
-   qui passe par "Commande moteur fournisseur" (+externe, P20D) se retrouve
+   qui passe par "Commande moteur fournisseur" (+external, P20D) se retrouve
    reporte sur "Monter assemblage".
 
 2. Un `due` PROPRE (pas une echeance de projet) sur deux taches, ecrit au
@@ -181,7 +181,7 @@ def test_essai_utilisateur_non_integre():
 def test_monter_assemblage_retard_force(jour):
     """Calcul grossier (meme outillage que test_base_realiste.py) : la marge
     du plus long chemin jusqu'a "Monter assemblage" (chemin qui passe par
-    "Commande moteur fournisseur", +externe P20D, puis "Assembler prototype")
+    "Commande moteur fournisseur", +external P20D, puis "Assembler prototype")
     face a son `due` propre est NEGATIVE -- le retard est force, pas une
     consequence d'un ordonnancement sous-optimal."""
     base = generer(jour)
@@ -208,7 +208,7 @@ def test_controler_reception_axe_pompe_reste_tenable(jour):
     """Meme regle de marge (>= 7 j) que
     test_regle_de_marge_chemin_critique_laisse_une_semaine, appliquee au due
     propre de "Controler reception axe pompe" (chaine : Finaliser plan ->
-    Etablir devis -> Fabrication axe pompe [+externe P18D] -> elle-meme)."""
+    Etablir devis -> Fabrication axe pompe [+external P18D] -> elle-meme)."""
     base = generer(jour)
     par_desc = _index_par_description(base.taches)
     cible = par_desc[NOM_CONTROLER]

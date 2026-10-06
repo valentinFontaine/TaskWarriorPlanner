@@ -194,9 +194,9 @@ def test_tache_plus_courte_que_le_bloc_minimum_tient_en_un_bloc():
 
 
 def test_tache_insecable_tient_en_un_seul_bloc():
-    """Une tache +insecable de 3h (qui tient exactement dans une plage) donne un seul bloc."""
+    """Une tache +nosplit de 3h (qui tient exactement dans une plage) donne un seul bloc."""
     uuid = "88888888-0000-0000-0000-000000000001"
-    tache = _tache(uuid, heures=3, due=ECHEANCE_PROJET, tags=("pro", "insecable"))
+    tache = _tache(uuid, heures=3, due=ECHEANCE_PROJET, tags=("pro", "nosplit"))
 
     plan = _resoudre([tache])
 
@@ -206,7 +206,7 @@ def test_tache_insecable_tient_en_un_seul_bloc():
 
 
 def test_tache_insecable_trop_longue_pour_toute_plage_est_infeasible():
-    """Une tache +insecable de 4h ne tient dans aucune plage (3h max) : le plan est INFEASIBLE.
+    """Une tache +nosplit de 4h ne tient dans aucune plage (3h max) : le plan est INFEASIBLE.
 
     Choix assene : puisque le decoupage en un seul bloc est une contrainte
     structurelle dure (design.md §5, "fenetres"), et non l'echeance (qui,
@@ -216,7 +216,7 @@ def test_tache_insecable_trop_longue_pour_toute_plage_est_infeasible():
     qui est assene ici, pas un simple signalement dans `en_retard`.
     """
     uuid = "88888888-0000-0000-0000-000000000002"
-    tache = _tache(uuid, heures=4, due=ECHEANCE_PROJET, tags=("pro", "insecable"))
+    tache = _tache(uuid, heures=4, due=ECHEANCE_PROJET, tags=("pro", "nosplit"))
 
     plan = _resoudre([tache])
 

@@ -52,7 +52,7 @@ def test_insecable_trop_longue():
     # soit 4h30. Une tache insecable de 8h ne peut donc tenir en un seul bloc.
     taches = [
         _tache("u1", "Gros bloc indivisible", estimated=timedelta(hours=8),
-               tags=("insecable",)),
+               tags=("nosplit",)),
     ]
     anomalies = pre_verifications(taches, config.contextes, MAINTENANT)
     assert len(anomalies) == 1
@@ -74,7 +74,7 @@ def test_insecable_qui_tient_ne_produit_aucune_anomalie():
     config = _config_reelle()
     taches = [
         _tache("u1", "Bloc indivisible qui tient", estimated=timedelta(hours=4),
-               tags=("insecable",)),
+               tags=("nosplit",)),
     ]
     anomalies = pre_verifications(taches, config.contextes, MAINTENANT)
     assert anomalies == []
@@ -160,9 +160,9 @@ def test_externe_sans_estimated():
 
     config = _config_reelle()
     taches = [
-        _tache("u1", "Commande fournisseur sans delai", tags=("externe",),
+        _tache("u1", "Commande fournisseur sans delai", tags=("external",),
                estimated=None),
-        _tache("u2", "Commande fournisseur avec delai", tags=("externe",),
+        _tache("u2", "Commande fournisseur avec delai", tags=("external",),
                estimated=timedelta(days=3)),
     ]
     anomalies = pre_verifications(taches, config.contextes, MAINTENANT)
@@ -203,14 +203,14 @@ def test_plusieurs_anomalies_et_ordre_deterministe():
     config = _config_reelle()
     taches = [
         _tache("u1", "En retard", due=MAINTENANT - timedelta(days=1)),
-        _tache("u2", "Externe sans delai", tags=("externe",), estimated=None),
+        _tache("u2", "Externe sans delai", tags=("external",), estimated=None),
         _tache("u3", "Sans contexte", contexte=None),
     ]
     anomalies_1 = pre_verifications(taches, config.contextes, MAINTENANT)
     anomalies_2 = pre_verifications(taches, config.contextes, MAINTENANT)
 
     # Quatre et non trois : `_tache` ne pose pas d'`estimated`, donc u1 et u3
-    # (u2 etant `+externe`, couverte par sa propre verification) tombent aussi
+    # (u2 etant `+external`, couverte par sa propre verification) tombent aussi
     # sous « sans-estimated », ajoutee au lot B. Ce n'est pas du bruit : sans
     # duree, ces taches ne sont jamais soumises au solveur, et c'est
     # precisement ce que personne ne voyait avant.

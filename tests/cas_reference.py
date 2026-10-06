@@ -21,7 +21,7 @@ La chaine :
     | Tache               | estimated | depend de | marqueur  |
     | A - Faire le plan   | 4 h       | -         | -         |
     | B - Commander       | 30 min    | A         | -         |
-    | C - Fabrication     | 28 jours  | B         | +externe  |
+    | C - Fabrication     | 28 jours  | B         | +external  |
     | D - Tester          | 3 h       | C         | -         |
 """
 from datetime import datetime, timedelta
@@ -79,7 +79,7 @@ def chaine():
               tags=("pro",), contexte="pro"),
         Tache(uuid=UUID_C, description="Fabrication fournisseur", projet=PROJET,
               estimated=timedelta(days=28), depends=(UUID_B,),
-              tags=("pro", "externe"), contexte="pro"),
+              tags=("pro", "external"), contexte="pro"),
         Tache(uuid=UUID_D, description="Tester", projet=PROJET,
               estimated=timedelta(hours=3), depends=(UUID_C,),
               tags=("pro",), contexte="pro"),
@@ -93,7 +93,7 @@ def taches_de_remplissage(nombre=3, heures=30):
     passe 2 (lot 6), qui n'est pas ecrite : on leur donne donc l'echeance du projet
     pour qu'elles entrent dans la passe 1. C'est une INTERPRETATION, declaree dans
     RAPPORT-NUIT.md. Elle ne change rien a ce que le controle mesure : la question
-    est de savoir si la fabrication `+externe` mange de la capacite, pas de savoir
+    est de savoir si la fabrication `+external` mange de la capacite, pas de savoir
     par quel regime ces taches sont placees.
     """
     return [

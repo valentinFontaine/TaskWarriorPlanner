@@ -157,7 +157,7 @@ CHAINE_LOT7 = [
      "entry": "20261005T080000Z", "tags": ["pro"]},
     {"uuid": "22222222-0000-0000-0000-000000000002",
      "description": "Tache externe", "status": "pending",
-     "entry": "20261005T080000Z", "tags": ["pro", "externe"]},
+     "entry": "20261005T080000Z", "tags": ["pro", "external"]},
 ]
 
 
@@ -231,7 +231,7 @@ def test_dry_run_n_ecrit_rien(base_jetable):
 
 
 def test_les_taches_externes_sont_ignorees(base_jetable):
-    """Une tache +externe planifiee n'a pas de `scheduled` apres ecriture — ce
+    """Une tache +external planifiee n'a pas de `scheduled` apres ecriture — ce
     n'est pas du travail de l'utilisateur, ca n'a pas a apparaitre dans son
     agenda — et elle apparait dans `ignorees`."""
     base_jetable.semer(CHAINE_LOT7)

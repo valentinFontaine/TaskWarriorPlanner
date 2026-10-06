@@ -221,10 +221,10 @@ def ecrire_scheduled(plan, env=None, dry_run=False, taches_existantes=None):
 
     Sont mises dans `ignorees` :
 
-    - les taches **`+externe`** : un delai fournisseur n'est pas du travail de
+    - les taches **`+external`** : un delai fournisseur n'est pas du travail de
       l'utilisateur, ca n'a pas a apparaitre dans son agenda (proposal.md
       decision 10) ;
-    - les taches **`+fige`** : leur `scheduled` est un FAIT, un engagement de
+    - les taches **`+fixed`** : leur `scheduled` est un FAIT, un engagement de
       l'utilisateur (tests/test_fige_fait.py) -- jamais ce que le plan a pu
       calculer ailleurs, meme quand la passe 2 les a deplacees dans le modele ;
     - les taches **absentes de la base**, pour qu'un plan un peu vieux ne fasse
@@ -259,7 +259,7 @@ def ecrire_scheduled(plan, env=None, dry_run=False, taches_existantes=None):
         if uuid not in etat:
             ignorees.append(uuid)
             continue
-        if "fige" in (etat[uuid].get("tags") or ()):
+        if "fixed" in (etat[uuid].get("tags") or ()):
             ignorees.append(uuid)
             continue
         voulu = _vers_utc_taskwarrior(
@@ -301,12 +301,12 @@ def ecrire_due(plan, taches, env=None, dry_run=False, taches_existantes=None,
     dates d'un `plan.json` deja ecrit, sans rien recalculer. `None` (par
     defaut) laisse le comportement strictement inchange. Fourni, c'est un
     dict `{uuid: datetime}` qui ne porte pas forcement toutes les taches du
-    plan : une tache du plan (non `+externe`) absente de `dues` va dans
+    plan : une tache du plan (non `+external`) absente de `dues` va dans
     `ignorees`, exactement comme si son `due` etait nul.
 
     Sont mises dans `ignorees` :
 
-    - les taches **`+externe`** : comme pour `scheduled` (proposal.md
+    - les taches **`+external`** : comme pour `scheduled` (proposal.md
       decision 10) ;
     - les taches **absentes de `dues`** (uniquement possible quand `dues` est
       fourni explicitement) ;

@@ -1,4 +1,4 @@
-"""Contrat de test — le bloc 0 d'une tache +fige est un FAIT, pas une decision.
+"""Contrat de test — le bloc 0 d'une tache +fixed est un FAIT, pas une decision.
 
 Deux defauts trouves la nuit 3, sur `planif/solveur.py` :
 
@@ -19,12 +19,12 @@ Deux defauts trouves la nuit 3, sur `planif/solveur.py` :
   placement invente.
 
 Specification retenue (voir le prompt qui a produit ce fichier) : le bloc 0
-d'une tache `+fige` qui porte un `scheduled` est un intervalle CONSTANT
+d'une tache `+fixed` qui porte un `scheduled` est un intervalle CONSTANT
 commencant exactement a `scheduled`, de la taille du bloc 0, dans les DEUX
 passes — meme hors grille ou au-dela de la frontiere. Il occupe la ressource,
 consomme la capacite du jour, contraint ses successeurs, et ne rend jamais le
 plan infaisable. `--appliquer` ne reecrit JAMAIS le `scheduled` (ni les tags)
-d'une tache `+fige`.
+d'une tache `+fixed`.
 
 Horloge figee : aucun `datetime.now()` dans les tests 1 a 6 (T0/MAINTENANT
 constants du fichier). Le test 7 (sous-processus, `--appliquer`) suit le
@@ -84,7 +84,7 @@ SCHEDULED_HORS_GRILLE = T0.replace(hour=20, minute=0)
 
 def _tache_f_hors_grille():
     return Tache(uuid=UUID_F1, description="F - figee hors grille",
-                tags=("fige",), estimated=timedelta(hours=1),
+                tags=("fixed",), estimated=timedelta(hours=1),
                 due=MAINTENANT + timedelta(days=10), contexte="ctxA",
                 scheduled=SCHEDULED_HORS_GRILLE)
 
@@ -139,7 +139,7 @@ def _tache_f_agregee_hors_plage():
     # choix du regime). C'est le cas le plus direct pour exercer une fenetre
     # agregee.
     return Tache(uuid=UUID_F2, description="F - figee, jour agrege, hors plage",
-                tags=("fige",), estimated=timedelta(hours=1),
+                tags=("fixed",), estimated=timedelta(hours=1),
                 contexte="ctxA", scheduled=SCHEDULED_AGREGE_HORS_PLAGE)
 
 
@@ -172,7 +172,7 @@ SCHEDULED_VALIDE = T0.replace(hour=9, minute=0)
 
 def _tache_f_valide():
     return Tache(uuid=UUID_F3, description="F - figee, creneau valide",
-                tags=("fige",), estimated=timedelta(hours=1),
+                tags=("fixed",), estimated=timedelta(hours=1),
                 due=MAINTENANT + timedelta(days=10), contexte="ctxA",
                 scheduled=SCHEDULED_VALIDE)
 
@@ -204,7 +204,7 @@ UUID_H4 = "64646464-0000-0000-0000-000000000004"
 
 def _tache_f_valide_4():
     return Tache(uuid=UUID_F4, description="F - figee, creneau valide",
-                tags=("fige",), estimated=timedelta(hours=1),
+                tags=("fixed",), estimated=timedelta(hours=1),
                 contexte="ctxA", scheduled=SCHEDULED_VALIDE)
 
 
@@ -243,7 +243,7 @@ SCHEDULED_TARD_DANS_LA_FENETRE = T0.replace(hour=12, minute=0)
 
 def _tache_n_figee_non_datee():
     return Tache(uuid=UUID_N5, description="N - figee, non datee",
-                tags=("fige",), estimated=timedelta(hours=1),
+                tags=("fixed",), estimated=timedelta(hours=1),
                 contexte="ctxA", scheduled=SCHEDULED_TARD_DANS_LA_FENETRE)
 
 
@@ -276,7 +276,7 @@ def test_passe2_selection_ne_doit_jamais_ecarter_une_tache_figee():
 
 
 # ==========================================================================
-# 6. Temoin -- sans +fige, meme scenario que le test 1 : vert avant et apres
+# 6. Temoin -- sans +fixed, meme scenario que le test 1 : vert avant et apres
 # ==========================================================================
 
 UUID_F6 = "f6f6f6f6-0000-0000-0000-000000000006"
@@ -285,7 +285,7 @@ UUID_G6 = "06060606-0000-0000-0000-000000000006"
 
 def _tache_f_libre():
     # Memes donnees que le test 1 (meme scheduled, meme due, meme estimated),
-    # SANS le tag +fige : scheduled n'est alors qu'une indication passee, sans
+    # SANS le tag +fixed : scheduled n'est alors qu'une indication passee, sans
     # effet sur le modele (design.md : scheduled n'est contraignant qu'avec fige).
     return Tache(uuid=UUID_F6, description="F - libre (temoin, pas fige)",
                 estimated=timedelta(hours=1),
@@ -332,7 +332,7 @@ DUE_OM3 = T0.replace(hour=10, minute=0)  # a boucler avant la fin du bloc fige
 
 def _tache_f_valide_m3():
     return Tache(uuid=UUID_FM3, description="F - figee, creneau valide",
-                tags=("fige",), estimated=timedelta(hours=1),
+                tags=("fixed",), estimated=timedelta(hours=1),
                 contexte="ctxA", scheduled=SCHEDULED_VALIDE)
 
 
@@ -401,7 +401,7 @@ UUID_OM4 = "0d0d0d0d-0000-0000-0000-000000000042"
 def _tache_f_agregee_m4():
     # Pas de due : non-datee -> agregee des que le regime est actif.
     return Tache(uuid=UUID_FM4, description="F - figee, jour agrege, capacite pile",
-                tags=("fige",), estimated=timedelta(hours=1),
+                tags=("fixed",), estimated=timedelta(hours=1),
                 contexte="ctxM4", scheduled=SCHEDULED_FM4)
 
 
@@ -456,7 +456,7 @@ DUE_FM5 = T0.replace(hour=12, minute=0)         # echeance a la fin du bloc 0
 
 def _tache_f_figee_2blocs_m5():
     return Tache(uuid=UUID_FM5, description="F - figee, 2 blocs, place avant et apres",
-                tags=("fige",), estimated=timedelta(hours=2),
+                tags=("fixed",), estimated=timedelta(hours=2),
                 contexte="ctxA", scheduled=SCHEDULED_FM5, due=DUE_FM5)
 
 
@@ -530,7 +530,7 @@ def _semer_7(base_jetable):
               "estTime": "PT1H", "project": "NPD.figefait"}
     base_jetable.semer([
         dict(commun, uuid=U_FIGE7, description="Figee, vraie date X",
-             tags=["pro", "fige"], scheduled=_tw(SCHEDULED_FIGE_X)),
+             tags=["pro", "fixed"], scheduled=_tw(SCHEDULED_FIGE_X)),
         dict(commun, uuid=U_NORMALE7, description="Normale, pas figee",
              tags=["pro"]),
     ])
@@ -582,7 +582,7 @@ SCHEDULED_F8 = T0.replace(hour=9, minute=0)
 def _tache_f8_figee_multi_blocs_sans_suite():
     return Tache(uuid=UUID_F8,
                 description="F - figee, 3 blocs, aucune place pour 1 et 2",
-                tags=("fige",), estimated=timedelta(hours=6), contexte="ctxB",
+                tags=("fixed",), estimated=timedelta(hours=6), contexte="ctxB",
                 scheduled=SCHEDULED_F8)
 
 
@@ -598,7 +598,7 @@ def test_passe1_fige_multi_blocs_sans_capacite_pour_la_suite():
     674) -- aucune fenetre retenue leur pose `modele.Add(depart > horizon)`,
     un domaine vide, ce qui rend TOUT le modele INFEASIBLE. Attendu ROUGE
     avant correction : la specification (docstring de ce fichier) dit qu'une
-    tache +fige ne rend JAMAIS le plan infaisable -- meme quand sa suite ne
+    tache +fixed ne rend JAMAIS le plan infaisable -- meme quand sa suite ne
     tient nulle part."""
     plan = resoudre(
         [_tache_f8_figee_multi_blocs_sans_suite(), _tache_g8_independante()],
@@ -633,7 +633,7 @@ SCHEDULED_N9 = T0.replace(hour=9, minute=0)
 def _tache_n9_figee_non_datee_multi_blocs():
     return Tache(uuid=UUID_N9,
                 description="N - figee, non datee, 3 blocs, aucune place pour 1 et 2",
-                tags=("fige",), estimated=timedelta(hours=6), contexte="ctxB",
+                tags=("fixed",), estimated=timedelta(hours=6), contexte="ctxB",
                 scheduled=SCHEDULED_N9)
 
 
@@ -713,13 +713,13 @@ SCHEDULED_H1B = T0.replace(hour=10, minute=0)  # bloc 0 (unique) de H : 10:00-11
 
 def _tache_f1b_figee_2blocs():
     return Tache(uuid=UUID_F1B, description="F - figee, 2 blocs, suite disputee",
-                tags=("fige",), estimated=timedelta(hours=2), contexte="ctxC",
+                tags=("fixed",), estimated=timedelta(hours=2), contexte="ctxC",
                 scheduled=SCHEDULED_F1B)
 
 
 def _tache_h1b_figee_occupe_la_suite():
     return Tache(uuid=UUID_H1B, description="H - figee, occupe la seule fenetre de F",
-                tags=("fige",), estimated=timedelta(hours=1), contexte="ctxC",
+                tags=("fixed",), estimated=timedelta(hours=1), contexte="ctxC",
                 scheduled=SCHEDULED_H1B)
 
 
@@ -784,13 +784,13 @@ SCHEDULED_N2B = T0.replace(hour=9, minute=0)   # bloc 0 de N : 09:00-10:00
 
 def _tache_m2b_figee_fait_de_passe1():
     return Tache(uuid=UUID_M2B, description="M - figee, deja posee en passe 1",
-                tags=("fige",), estimated=timedelta(hours=1), contexte="ctxC",
+                tags=("fixed",), estimated=timedelta(hours=1), contexte="ctxC",
                 scheduled=SCHEDULED_M2B)
 
 
 def _tache_n2b_figee_non_datee_2blocs():
     return Tache(uuid=UUID_N2B, description="N - figee, non datee, 2 blocs, suite disputee",
-                tags=("fige",), estimated=timedelta(hours=2), contexte="ctxC",
+                tags=("fixed",), estimated=timedelta(hours=2), contexte="ctxC",
                 scheduled=SCHEDULED_N2B)
 
 
@@ -890,7 +890,7 @@ MARDI_10H_F3 = T0.replace(hour=10, minute=0) + timedelta(days=1)  # repli de X
 
 def _tache_f3b_figee_2blocs_creneau_dispute():
     return Tache(uuid=UUID_F3B, description="F - figee, 2 blocs, bloc 1 dispute avec X",
-                tags=("fige",), estimated=timedelta(hours=2), contexte="ctxD",
+                tags=("fixed",), estimated=timedelta(hours=2), contexte="ctxD",
                 scheduled=SCHEDULED_F3B, due=DUE_F3B)
 
 
@@ -941,7 +941,7 @@ def test_appliquer_ne_reecrit_jamais_le_scheduled_d_une_figee(base_jetable, tmp_
     assert apres[U_FIGE7]["scheduled"] == _tw(SCHEDULED_FIGE_X), (
         "le scheduled de la tache figee a ete reecrit : attendu {}, trouve {}"
         .format(_tw(SCHEDULED_FIGE_X), apres[U_FIGE7].get("scheduled")))
-    assert set(apres[U_FIGE7].get("tags") or []) == {"pro", "fige"}, (
+    assert set(apres[U_FIGE7].get("tags") or []) == {"pro", "fixed"}, (
         "les tags de la tache figee ont change : {}".format(apres[U_FIGE7].get("tags")))
 
     # temoin : la tache normale, elle, EST bien modifiee par --appliquer.

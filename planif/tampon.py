@@ -186,7 +186,7 @@ def separer_passe1_passe2(taches):
     laisse un predecesseur non date d'une tache datee partir en passe 2, qui
     ne le contraint jamais a finir avant son successeur (`planif/solveur.py`
     pose la precedence uniquement entre candidates d'une meme passe). Pire,
-    une tache `+externe` non datee est en plus explicitement ecartee de la
+    une tache `+external` non datee est en plus explicitement ecartee de la
     passe 2 et n'apparaissait alors dans aucune des deux.
 
     En remontant `depends` transitivement, tout predecesseur d'une tache

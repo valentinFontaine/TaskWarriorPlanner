@@ -14,7 +14,7 @@ du premier bloc) ; la `due` calculee, non. Chaque tache du plan gagne un champ
 - tache placee par la **passe 2** (tous ses blocs opportunistes) : `null`. La
   passe 2 place du travail non date au plus tot ; la fin de ce placement n'est
   pas une date limite, et la passe 1 n'a rien calcule pour elle ;
-- une tache `+externe` porte sa valeur comme les autres : le fichier dit ce que
+- une tache `+external` porte sa valeur comme les autres : le fichier dit ce que
   la passe 1 a calcule, et c'est l'ecriture qui ignore les externes (inchange).
 
 Le champ est **toujours present** (valeur ou `null`), avec ou sans `taches`

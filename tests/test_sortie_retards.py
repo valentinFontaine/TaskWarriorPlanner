@@ -259,7 +259,7 @@ def test_sans_contextes_le_format_ne_bouge_pas():
 
 # ---------------------------------------------------------------------------
 # 4. Bout en bout : `python -m planif` sur une base jetable, chaine forcee
-#    en retard derriere un +externe (motif "Monter assemblage", en plus
+#    en retard derriere un +external (motif "Monter assemblage", en plus
 #    petit, construit ici -- ne touche pas tests/base_realiste.py).
 # ---------------------------------------------------------------------------
 
@@ -296,7 +296,7 @@ def _config_large():
 
 
 def test_plan_json_bout_en_bout_porte_le_retard(base_jetable, tmp_path):
-    """"ext" (+externe, 10 jours) precede "succ" (due propre, dans 2 jours).
+    """"ext" (+external, 10 jours) precede "succ" (due propre, dans 2 jours).
     10 jours d'externe ne peuvent structurellement pas tenir avant une
     echeance a 2 jours, quel que soit le jour reel d'execution : le retard
     est force, pas un artefact d'ordonnancement."""
@@ -307,7 +307,7 @@ def test_plan_json_bout_en_bout_porte_le_retard(base_jetable, tmp_path):
         {"uuid": "11111111-1111-1111-1111-111111111111",
          "description": "Delai fournisseur", "status": "pending",
          "entry": _tw(maintenant - timedelta(days=1)), "estTime": "P10D",
-         "project": "NPD.test_retard", "tags": ["pro", "externe"]},
+         "project": "NPD.test_retard", "tags": ["pro", "external"]},
         {"uuid": "22222222-2222-2222-2222-222222222222",
          "description": "Reception, datee intenable", "status": "pending",
          "entry": _tw(maintenant - timedelta(days=1)), "estTime": "PT1H",

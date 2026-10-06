@@ -23,9 +23,9 @@ Consequence concrete, verifiee ci-dessous :
   successeur DATE n'est pas une candidate de la passe 2 (il est deja fige par
   la passe 1) : sa dependance vers un predecesseur non date n'est donc jamais
   relue, dans aucune des deux passes.
-- les taches `+externe` non datees sont en plus explicitement ecartees de la
+- les taches `+external` non datees sont en plus explicitement ecartees de la
   passe 2 (`planif/solveur.py`, ~ligne 831 : `if tache.externe: continue`,
-  "un delai fournisseur n'est pas du travail opportuniste"). Un `+externe`
+  "un delai fournisseur n'est pas du travail opportuniste"). Un `+external`
   non date n'apparait donc dans AUCUNE des deux passes : il est absent du
   plan.
 
@@ -200,19 +200,19 @@ def test_chaine_transitive_est_planifiee_et_ordonnee(base_jetable, tmp_path):
 
 
 # --------------------------------------------------------------------------
-# 3. +externe non date, predecesseur d'une tache datee
+# 3. +external non date, predecesseur d'une tache datee
 # --------------------------------------------------------------------------
 
 def test_externe_non_date_apparait_et_precede_le_successeur_date(
         base_jetable, tmp_path):
     """Represente comme le fait tests/base_realiste.py : tags=("pro",
-    "externe"), duree en JOURS (delai calendaire fournisseur, planif/solveur.py
+    "external"), duree en JOURS (delai calendaire fournisseur, planif/solveur.py
     lot 5). Sa duree (3 jours) tient largement avant l'echeance choisie (le
     2e vendredi a venir), sans faire jouer la capacite `pro` -- l'externe n'en
     consomme aucune, par definition (decision 10)."""
     due = _jour_a_venir(4, 2, 17)   # 2e vendredi : de la place pour 3 jours avant
     base_jetable.semer([
-        _tache(UUID_A, "Delai fournisseur", jours=3, tags=("pro", "externe")),
+        _tache(UUID_A, "Delai fournisseur", jours=3, tags=("pro", "external")),
         _tache(UUID_B, "Reception, datee", heures=2, due=due, depends=(UUID_A,)),
     ])
 
@@ -220,7 +220,7 @@ def test_externe_non_date_apparait_et_precede_le_successeur_date(
 
     a = _entree(plan, UUID_A)
     b = _entree(plan, UUID_B)
-    assert a["blocs"], "le delai fournisseur (+externe) est absent du plan"
+    assert a["blocs"], "le delai fournisseur (+external) est absent du plan"
     assert b["blocs"]
     assert all(bloc["externe"] for bloc in a["blocs"])
     assert _dernier_fin(a) <= _premier_debut(b), (

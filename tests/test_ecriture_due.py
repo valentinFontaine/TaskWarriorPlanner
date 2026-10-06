@@ -100,11 +100,11 @@ def test_une_due_humaine_n_est_pas_ecrasee(base_jetable):
 
 def test_les_taches_externes_sont_ignorees(base_jetable):
     _seed_minimale(base_jetable, [(UUID_EXTERNE, "Delai fournisseur",
-                                   ("externe",))])
+                                   ("external",))])
     bloc = Bloc(uuid=UUID_EXTERNE, indice=0, debut=0, fin=1344, externe=True)
     plan = _plan([bloc])
     taches = [Tache(uuid=UUID_EXTERNE, description="Delai fournisseur",
-                    tags=("externe",))]
+                    tags=("external",))]
 
     rapport = ecrire_due(plan, taches, env=base_jetable.env)
 

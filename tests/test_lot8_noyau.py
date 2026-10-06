@@ -90,7 +90,7 @@ def test_le_noyau_nomme_la_tache_figee_qui_bloque():
     """Une tache figee qui occupe la seule place disponible avant l'echeance
     d'une autre : les DEUX elements sont nommes, et rien d'autre."""
     # Le lundi 05/10 : 4 h utiles. Une tache figee de 4 h le prend en entier.
-    figee = _tache(1, 4, tags=("pro", "fige"),
+    figee = _tache(1, 4, tags=("pro", "fixed"),
                    scheduled=datetime(2026, 10, 5, 9, 0))
     # Une tache de 4 h qui doit finir avant mardi 06/10 : apres tampon, sa
     # limite tombe avant que la figee ne libere quoi que ce soit.
@@ -107,9 +107,9 @@ def test_le_noyau_nomme_la_tache_figee_qui_bloque():
 
 
 def test_le_noyau_nomme_une_tache_insecable_trop_longue():
-    """Une tache +insecable de 4 h ne tient dans aucune plage (3 h au plus) :
+    """Une tache +nosplit de 4 h ne tient dans aucune plage (3 h au plus) :
     c'est elle que le noyau doit nommer."""
-    insecable = _tache(1, 4, tags=("pro", "insecable"), due=ECHEANCE_PROJET)
+    insecable = _tache(1, 4, tags=("pro", "nosplit"), due=ECHEANCE_PROJET)
 
     diag = diagnostiquer([insecable], CONTEXTES, T0, MAINTENANT, HORIZON_FIN,
                          GRANULARITE)

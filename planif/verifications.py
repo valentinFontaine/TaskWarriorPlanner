@@ -100,7 +100,7 @@ def _capacite_utile_max(contexte):
 
 
 def verifier_insecables(taches, contextes):
-    """Taches +insecable plus longues que la plus grande plage disponible.
+    """Taches +nosplit plus longues que la plus grande plage disponible.
 
     Une tache sans contexte attribuable n'est pas jugee ici : elle est deja
     signalee par `verifier_sans_contexte`, et on ne peut de toute facon pas
@@ -220,7 +220,7 @@ def verifier_dues(taches, maintenant):
 
 
 def verifier_externes_sans_estimated(taches):
-    """Taches +externe sans `estimated` : delai fournisseur non renseigne."""
+    """Taches +external sans `estimated` : delai fournisseur non renseigne."""
     concernees = [t for t in taches if t.externe and t.estimated is None]
     if not concernees:
         return []
@@ -235,12 +235,12 @@ def verifier_sans_estimated(taches):
 
     `planif/solveur.py` les saute (`if tache.estimated is None: continue`) en
     annoncant qu'elles sont « signalees par les pre-verifications ». Elles ne
-    l'etaient pas : seul le cas `+externe` avait sa verification. Une tache
+    l'etaient pas : seul le cas `+external` avait sa verification. Une tache
     ordinaire sans duree disparaissait donc du plan sans un mot, et sur une
     base ou la plupart des taches n'ont pas d'estimation, on pouvait regarder
     un calendrier vide en croyant que tout allait bien.
 
-    Les `+externe` restent a `verifier_externes_sans_estimated`, qui dit mieux
+    Les `+external` restent a `verifier_externes_sans_estimated`, qui dit mieux
     les choses : ce n'est pas « une charge inconnue » mais « un delai
     fournisseur non renseigne ». Deux problemes differents, un seul message
     par tache.

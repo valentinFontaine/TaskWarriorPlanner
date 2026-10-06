@@ -9,7 +9,7 @@ un scenario a DEUX contextes synthetiques, ouverts le meme jour, avec des
 grilles horaires qui ne se chevauchent pas dans la journee (l'utilisateur reste
 une ressource unique).
 
-Partie 2 : le marqueur `+fige` (contrainte 8 de `planif/solveur.py`) n'est
+Partie 2 : le marqueur `+fixed` (contrainte 8 de `planif/solveur.py`) n'est
 couvert par aucun test. Il est traite ici comme non eprouve jusqu'a preuve du
 contraire.
 
@@ -172,7 +172,7 @@ def test_les_deux_contextes_ne_se_chevauchent_jamais_dans_le_temps(plan_deux_con
 
 
 # ==========================================================================
-# Partie 2 - la tache figee (+fige)
+# Partie 2 - la tache figee (+fixed)
 # ==========================================================================
 #
 # Contexte de test dedie : lun-ven 09:00-13:00 (4 h), marge nulle -> 4 h
@@ -203,7 +203,7 @@ UUID_A_FIGE = "c3c3c3c3-0000-0000-0000-000000000003"
 UUID_B_LIBRE = "d4d4d4d4-0000-0000-0000-000000000004"
 UUID_C_DEP = "e5e5e5e5-0000-0000-0000-000000000005"
 
-TACHE_A_FIGE = Tache(uuid=UUID_A_FIGE, description="Figee", tags=("fige",),
+TACHE_A_FIGE = Tache(uuid=UUID_A_FIGE, description="Figee", tags=("fixed",),
                      estimated=timedelta(hours=1), contexte="fige_ctx",
                      scheduled=SCHEDULED_A)
 TACHE_B_LIBRE = Tache(uuid=UUID_B_LIBRE, description="Libre",
@@ -221,13 +221,13 @@ def plan_fige():
 
 
 def test_tache_figee_commence_exactement_a_son_scheduled(plan_fige):
-    """Le debut du bloc unique d'une tache +fige est exactement son `scheduled`."""
+    """Le debut du bloc unique d'une tache +fixed est exactement son `scheduled`."""
     assert plan_fige.debut(UUID_A_FIGE) == SCHEDULED_A
 
 
 def test_tache_figee_ne_bouge_pas_meme_si_le_solveur_prefererait_plus_tard(plan_fige):
     """L'objectif maximise la somme des debuts (« au plus tard ») : sans la
-    contrainte +fige, A partirait aussi tard que possible, comme B. La figee
+    contrainte +fixed, A partirait aussi tard que possible, comme B. La figee
     doit rester a sa date alors que la tache libre part bien plus tard."""
     debut_a = plan_fige.debut(UUID_A_FIGE)
     debut_b = plan_fige.debut(UUID_B_LIBRE)

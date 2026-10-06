@@ -18,7 +18,7 @@ from tests.cas_reference import (CONTEXTE_PRO, CONTEXTES, ECHEANCE_PROJET,
 
 NOMS = {UUID_A: "A - Faire le plan (4 h)",
         UUID_B: "B - Commander (30 min)",
-        UUID_C: "C - Fabrication (28 j, +externe)",
+        UUID_C: "C - Fabrication (28 j, +external)",
         UUID_D: "D - Tester (3 h)"}
 
 JOURS_FR = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")

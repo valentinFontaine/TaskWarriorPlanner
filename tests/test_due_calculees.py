@@ -20,7 +20,7 @@ celui qui verifie que la sortie ne remonte pas en entree.
 Sur 136 taches reelles on obtient un plan qu'on ne peut pas verifier : il n'y a
 pas de reponse calculable a la main a comparer. Ici il y en a une. La chaine
 est celle de l'utilisateur, a quatre maillons, et le delai de 4 semaines est
-porte par le marqueur `+externe`, dont `estTime` se lit comme un DELAI et non
+porte par le marqueur `+external`, dont `estTime` se lit comme un DELAI et non
 comme du travail (solveur.py, « un seul intervalle, de duree `estimated` lue
 comme un DELAI »). C'est ce qui permet a une fabrication de 4 semaines de ne
 pas devorer 4 semaines de journees de travail.
@@ -36,7 +36,7 @@ demande :
 1. toute tache placee ressort avec une `due` ;
 2. la `due` d'un maillon ne depasse pas le debut du suivant ;
 3. le delai de 4 semaines se voit dans l'ecart entre la commande et le
-   montage -- c'est le controle de MECANISME : si `+externe` etait traite comme
+   montage -- c'est le controle de MECANISME : si `+external` etait traite comme
    du travail, ou simplement traverse, cet ecart s'effondrerait ;
 4. l'echeance du montage n'est pas deplacee par le calcul ;
 5. une `due` calculee ne se fait pas passer pour une `due` posee par
@@ -70,7 +70,7 @@ PROJET = "NPD.exemple.piece"
 
 
 def chaine_de_la_piece():
-    """plans -> commande -> fabrication (+externe, 4 semaines) -> montage.
+    """plans -> commande -> fabrication (+external, 4 semaines) -> montage.
 
     `depends` porte les PREDECESSEURS (convention Taskwarrior).
     """
@@ -82,7 +82,7 @@ def chaine_de_la_piece():
               depends=(UUID_PLANS,), tags=("pro",), contexte="pro"),
         Tache(uuid=UUID_FABRICATION, description="Fabrication de la piece",
               projet=PROJET, estimated=DELAI_FABRICATION,
-              depends=(UUID_COMMANDE,), tags=("pro", "externe"),
+              depends=(UUID_COMMANDE,), tags=("pro", "external"),
               contexte="pro"),
         Tache(uuid=UUID_MONTAGE, description="Montage", projet=PROJET,
               estimated=timedelta(hours=2), depends=(UUID_FABRICATION,),
@@ -109,7 +109,7 @@ def dues(plan):
 def test_le_delai_externe_ne_devore_pas_les_journees_de_travail(plan):
     """Garde-fou sur l'INSTRUMENT, avant toute question de due.
 
-    Si `+externe` etait lu comme du travail, la fabrication reclamerait 4
+    Si `+external` etait lu comme du travail, la fabrication reclamerait 4
     semaines de creneaux ouvres -- soit bien plus que les 4 semaines de
     calendrier disponibles -- et tout le reste du fichier mesurerait autre
     chose que ce qu'il croit.
@@ -143,7 +143,7 @@ def test_les_quatre_semaines_de_delai_se_voient_dans_la_due_de_la_commande(dues)
 
     C'est l'assertion de l'utilisateur, litteralement : montage le 31/12,
     fabrication 4 semaines, donc la commande est due au plus tard 4 semaines
-    avant. Un `+externe` traite comme du travail, ou purement et simplement
+    avant. Un `+external` traite comme du travail, ou purement et simplement
     traverse, ferait s'effondrer cet ecart -- aucune autre assertion du fichier
     ne le verrait.
     """

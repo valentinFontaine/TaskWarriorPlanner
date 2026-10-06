@@ -12,7 +12,7 @@ cette date que l'utilisateur veut voir dans Taskwarrior.
 
 La regle est celle-la, et rien de plus : **la `due` d'une tache est la fin de
 son dernier bloc dans le plan.** Le solveur a deja fait tout le travail --
-precedences, delais `+externe`, capacite des contextes, conflits avec le reste
+precedences, delais `+external`, capacite des contextes, conflits avec le reste
 du portefeuille. Recalculer quoi que ce soit ici reviendrait a dupliquer le
 modele, avec la certitude de diverger.
 

@@ -36,8 +36,8 @@ reunions, ne lance pas le solveur : il relit le fichier, reconstruit un
 ``planif.solveur.Plan`` a partir de son contenu, et appelle
 ``ecrire_scheduled``/``ecrire_due`` comme le ferait ``--ecrire-scheduled``/
 ``--ecrire-due`` -- avec lesquels il est donc mutuellement exclusif, les deux
-voies d'ecriture ne se melangent pas. Il ne pose jamais ``+fige`` : c'est E3
-(``+fige``) qui le fait, ailleurs.
+voies d'ecriture ne se melangent pas. Il ne pose jamais ``+fixed`` : c'est E3
+(``+fixed``) qui le fait, ailleurs.
 """
 import argparse
 import json

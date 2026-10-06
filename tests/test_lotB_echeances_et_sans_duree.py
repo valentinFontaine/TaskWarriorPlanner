@@ -19,7 +19,7 @@ commentaire :
         continue  # signale par les pre-verifications, pas devine ici
 
 C'est faux. `verifications.py` ne verifie l'absence d'`estTime` que pour les
-taches `+externe`. Une tache ordinaire sans duree est eliminee du plan **sans
+taches `+external`. Une tache ordinaire sans duree est eliminee du plan **sans
 un mot** : ni anomalie, ni compteur. Sur une base ou la majorite des taches
 n'ont pas d'estimation, on regarderait un calendrier confortablement vide en
 ignorant que le solveur n'a jamais vu ce contenu.
@@ -166,13 +166,13 @@ def test_le_cas_nominal_ne_signale_rien():
 def test_une_tache_externe_sans_duree_n_est_pas_comptee_deux_fois():
     """`externe-sans-estimated` existe deja et dit mieux les choses.
 
-    Une tache `+externe` sans duree n'est pas « une tache dont on ignore la
+    Une tache `+external` sans duree n'est pas « une tache dont on ignore la
     charge » mais « un delai fournisseur non renseigne » : deux problemes
     differents, deux messages differents, et surtout un seul par tache.
     """
     from planif.verifications import verifier_sans_estimated
 
-    taches = [_tache("33333333", tags=("pro", "externe"))]
+    taches = [_tache("33333333", tags=("pro", "external"))]
     assert verifier_sans_estimated(taches) == []
 
 

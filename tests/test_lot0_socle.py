@@ -50,7 +50,7 @@ def test_parse_duree_refuse_vide():
 # --------------------------------------------------------------------------
 
 def test_tags_traduits_en_marqueurs():
-    t = Tache(uuid="u", description="x", tags=("pro", "externe", "insecable"))
+    t = Tache(uuid="u", description="x", tags=("pro", "external", "nosplit"))
     assert t.externe is True
     assert t.insecable is True
     assert t.fige is False
@@ -79,7 +79,7 @@ CHAINE = [
     {"uuid": "33333333-3333-3333-3333-333333333333",
      "description": "Fabrication fournisseur", "status": "pending",
      "entry": "20261005T080000Z", "estTime": "P28D", "project": "NPD.helisides",
-     "tags": ["pro", "externe"], "depends": ["22222222-2222-2222-2222-222222222222"]},
+     "tags": ["pro", "external"], "depends": ["22222222-2222-2222-2222-222222222222"]},
     {"uuid": "44444444-4444-4444-4444-444444444444",
      "description": "Tester la pièce reçue", "status": "pending",
      "entry": "20261005T080000Z", "estTime": "PT3H", "project": "NPD.helisides",

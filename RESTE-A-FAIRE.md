@@ -192,6 +192,14 @@ blocage.
 Sur 278. Une tâche sans durée est **invisible au solveur**. Une échéance posée
 sur un projet dont les tâches n'ont pas de durée ne produit rien.
 
+### B9. `+delegation` → externe → `+monitoring` (demandé le 2026-10-06, plus tard)
+
+Nouveau tag `+delegation` : l'action que je fais pour lancer un externe (mail aux
+achats pour passer commande, expliquer à X les plans de détail). La tâche
+`+monitoring` correspondante **dépend** de la `+delegation`, mais sa date est
+commandée par la tâche externe, pas par ma capacité. Stratégie d'intégration au
+solveur à concevoir avec l'utilisateur. Pas pour les prochaines sessions.
+
 ---
 
 ## C. Hors de cette machine

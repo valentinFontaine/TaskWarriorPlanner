@@ -143,6 +143,15 @@ def limites_effectives_avec_origine(taches, contextes, tampon=TAMPON):
                 candidats.append(
                     (valeur_succ, succ if origine_succ is None else origine_succ)
                 )
+            # Le debut d'un successeur `+fixed` est un FAIT : tout predecesseur
+            # doit avoir fini avant. Sans cette limite, une chaine amont d'une
+            # figee sans `due` partait en regime agrege, au-dela de la
+            # frontiere, et la passe 1 devenait INFAISABLE
+            # (tests/test_fige_limite_predecesseurs.py). Pas de tampon : ce
+            # n'est pas une echeance.
+            tache_succ = par_uuid[succ]
+            if tache_succ.fige and tache_succ.scheduled is not None:
+                candidats.append((vers_local_naif(tache_succ.scheduled), succ))
 
         resultat = min(candidats, key=lambda c: c[0]) if candidats else (None, None)
 
@@ -164,6 +173,8 @@ def limites_effectives(taches, contextes, tampon=TAMPON):
       re-tamponner : limite(i) = min sur les successeurs j de limite(j).
     - Quand une tache a les deux (un `due` propre ET des successeurs dates),
       on prend le min des deux.
+    - Un successeur `+fixed` qui porte un `scheduled` borne aussi ses
+      predecesseurs a ce `scheduled`, sans tampon (c'est un fait).
     - Une tache sans `due` et sans successeur date recoit None.
 
     `tache.depends` contient les uuids des PREDECESSEURS de la tache (ce

@@ -37,6 +37,14 @@
       "Sunday": ["19:30-20:30"]
     }
   },
+  "periodes": [
+    {
+      "nom": "vacances travaux maisonChristina",
+      "debut": "2026-10-24",
+      "fin": "2026-11-01",
+      "timeSlots": {"pro": [], "perso": ["09:00-19:00"]}
+    }
+  ],
   "commuteTime": "10m",
   "plannedDurationDays": 7,
   "timezone": "UTC",

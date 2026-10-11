@@ -6,7 +6,7 @@ provenance est notee en face de chaque valeur.
 """
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from planif.modele import Contexte, Creneau, JOURS
@@ -107,6 +107,37 @@ def _parse_grille(grille_json):
     return grille
 
 
+def _parse_periodes(periodes_json, nom_contexte):
+    """Periodes datees d'un contexte : tuple de (debut, fin, creneaux).
+
+    Une periode (`config.json`, cle `periodes`) remplace, du `debut` a la `fin`
+    inclus, la grille des contextes qu'elle cite dans `timeSlots` ; les autres
+    gardent leur grille hebdomadaire. Cas d'origine : des vacances, `pro` a
+    zero et `perso` en journee entiere. Une date illisible leve en nommant la
+    periode : une periode ignoree en silence fausserait tout le plan.
+    """
+    periodes = []
+    for periode in periodes_json:
+        nom = periode.get("nom", "?")
+        try:
+            debut = date.fromisoformat(periode["debut"])
+            fin = date.fromisoformat(periode["fin"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(
+                "periode {} : debut et fin attendus au format « 2026-10-24 », "
+                "lu {!r} et {!r}".format(nom, periode.get("debut"),
+                                        periode.get("fin")))
+        if debut > fin:
+            raise ValueError("periode {} : debut {} apres la fin {}".format(
+                nom, debut, fin))
+        plages = periode.get("timeSlots", {}).get(nom_contexte)
+        if plages is None:
+            continue
+        creneaux = tuple(sorted(_parse_creneau(p) for p in plages))
+        periodes.append((debut, fin, creneaux))
+    return tuple(periodes)
+
+
 @dataclass(frozen=True)
 class Config:
     contextes: dict = field(default_factory=dict)
@@ -138,6 +169,7 @@ def charger_config(chemin=None, echeances_projet=None):
             bloc_min=BLOC_MIN_DEFAUT[nom],
             marge_jour=marge_pro if nom == "pro" else MARGE_PERSO_DEFAUT,
             grille=_parse_grille(grille_json),
+            periodes=_parse_periodes(brut.get("periodes", []), nom),
         )
 
     from planif.modele import Projet

@@ -74,7 +74,7 @@ def _plus_longue_plage(contexte):
     capacite totale (utile) d'une journee.
     """
     max_duree = timedelta(0)
-    for creneaux in contexte.grille.values():
+    for creneaux in contexte.toutes_les_grilles():
         for creneau in creneaux:
             if creneau.duree > max_duree:
                 max_duree = creneau.duree
@@ -89,7 +89,7 @@ def _capacite_utile_max(contexte):
     utiles » de l'exemple : c'est cette valeur-la, pas la plage contigue).
     """
     max_capacite = timedelta(0)
-    for creneaux in contexte.grille.values():
+    for creneaux in contexte.toutes_les_grilles():
         total_jour = sum((c.duree for c in creneaux), timedelta(0))
         capacite = total_jour - contexte.marge_jour
         if capacite < timedelta(0):

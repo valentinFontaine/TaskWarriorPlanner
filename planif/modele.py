@@ -58,10 +58,20 @@ class Contexte:
     marge_jour: timedelta
     # cle = weekday() (0 = lundi), valeur = creneaux de la grille, tries
     grille: dict = field(default_factory=dict)
+    # periodes datees qui remplacent la grille : tuple de (debut, fin, creneaux),
+    # bornes `date` incluses. La premiere qui couvre le jour l'emporte.
+    periodes: tuple = ()
 
     def creneaux(self, jour):
         """Creneaux bruts de la grille pour une `date` donnee (avant reunions et marge)."""
+        for debut, fin, creneaux in self.periodes:
+            if debut <= jour <= fin:
+                return tuple(creneaux)
         return tuple(self.grille.get(jour.weekday(), ()))
+
+    def toutes_les_grilles(self):
+        """Toutes les journees-types possibles : grille hebdomadaire et periodes."""
+        return list(self.grille.values()) + [c for _, _, c in self.periodes]
 
     def est_ouvre(self, jour):
         """Un jour ouvre est un jour dont la grille est non vide.

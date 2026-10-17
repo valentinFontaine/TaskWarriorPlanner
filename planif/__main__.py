@@ -56,7 +56,7 @@ from planif.selection import capacite_restante, selectionner_candidates
 from planif.solveur import Bloc, Plan, completer, resoudre
 from planif.dues import oublier_dues_calculees
 from planif.sortie import ecrire_due, ecrire_json, ecrire_scheduled
-from planif.reunions import reunions as charger_reunions
+from planif.reunions import occupations_figees, reunions as charger_reunions
 from planif.tampon import limites_effectives, separer_passe1_passe2
 from planif.taskwarrior import charger_taches
 from planif.verifications import CODES, pre_verifications
@@ -413,6 +413,7 @@ def main(argv=None):
     filtre = tuple(shlex.split(args.filtre))
     taches = charger_taches(filtre=filtre, env=env,
                             contextes_connus=config.contextes.keys())
+    uuids_filtre = {t.uuid for t in taches}
     # les `due` que NOUS avons ecrites au run precedent ne sont pas des
     # engagements : sans cet oubli, le plan se figerait sur sa propre sortie
     # de la veille (planif/dues.py::oublier_dues_calculees).
@@ -443,6 +444,17 @@ def main(argv=None):
                               else config.horizon_detaille.days)
     horizon_detaille_fin = t0 + timedelta(days=horizon_detaille_jours)
     reunions = charger_reunions(t0, horizon_fin, source=args.reunions)
+    if filtre != ("status:pending",):
+        # Hors filtre, une figee n'est pas planifiee mais prend quand meme le
+        # temps de l'utilisateur (tests/test_filtre_figees_hors_filtre.py).
+        figees = charger_taches(filtre=("status:pending", "+fixed"), env=env,
+                                contextes_connus=config.contextes.keys())
+        occupations = occupations_figees(figees, exclues=uuids_filtre)
+        if occupations:
+            print("--filtre : {} tache(s) figee(s) hors filtre comptee(s) "
+                  "comme temps occupe.\n".format(len(occupations)))
+            reunions = sorted(list(reunions) + occupations,
+                              key=lambda r: r.debut)
 
     # La passe 1 = taches datees UNION leurs predecesseurs transitifs, pas
     # seulement `t.due is not None` : sinon un predecesseur non date d'une

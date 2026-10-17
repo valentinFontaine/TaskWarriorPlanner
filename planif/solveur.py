@@ -196,6 +196,12 @@ POIDS_PLANCHER = 100
 #: annees d'horizon, a 30 minutes pres).
 PENALITE_ABSENCE_FIGE = 10 ** 7
 
+#: Poids d'un creneau de depassement de `delai_max` dans le second objectif
+#: de la passe 2 (design.md §5, contrainte 9) : il domine le decalage d'une
+#: tache, quelle que soit son urgence (au plus ~30 x ECHELLE_URGENCE par
+#: creneau), sans peser autant que la suite d'une figee.
+PENALITE_DELAI = 10 ** 6
+
 SECONDES_MAX = 300.0
 
 
@@ -376,6 +382,91 @@ def _construire_bloc_fige(modele, nom, fixe, t_bloc, frontiere, agregation):
     return depart, arrivee, fin, agrege
 
 
+def _figee_commencee(tache, fixe, fin, tot):
+    """Vrai si le FAIT (bloc 0 d'une figee) a commence avant `maintenant`.
+
+    On garde le fait (tests/test_fige_commencee.py) : le bloc reste a son
+    `scheduled`, meme passe. Le debut et la fin de la tache descendent donc
+    sous `tot`, et un predecesseur encore en attente ne la contraint plus --
+    on ne peut pas finir avant un debut deja passe. Avant cette regle, une
+    seule figee commencee rendait tout le modele INFAISABLE (17/10/2026).
+    """
+    if fixe >= tot:
+        return False
+    if fin <= tot:
+        _LOG.warning(
+            "tache %s (figee) : son debut et sa fin sont passes et elle n'est "
+            "pas terminee -- la marquer done ou la redater", tache.uuid)
+    return True
+
+
+def _depassements_delai(modele, taches, debuts, fins, granularite, horizon,
+                        plancher, fins_constantes=None, presences=None):
+    """Contrainte 9 (design.md §5), en SOUPLE : le depassement de `delai_max`.
+
+    Pour chaque paire A -> B ou B porte un `delai_max`, une variable
+    `>= debut(B) - fin(A) - delai` et `>= 0`, que l'objectif minimise -- elle
+    vaut donc exactement le depassement. En heures d'HORLOGE : les indices de
+    creneau comptent les nuits et les week-ends. Un delai intenable coute,
+    il ne rend jamais le modele infaisable (tests/test_delai_max.py).
+
+    `plancher` : le plus petit indice qu'une fin puisse prendre (`tot`, ou
+    le debut d'une figee commencee) ; il borne le depassement. On ne le lit
+    pas dans le domaine des variables : `IntVar.Proto().domain` a fait
+    planter CP-SAT (violation d'acces, ortools 9.15) au `Solve` suivant.
+    `fins_constantes` : fins des taches deja placees (passe 1, vue de la
+    passe 2). `presences` : en passe 2, le depassement ne compte que si les
+    taches de la paire sont toutes deux placees.
+
+    Rend une liste de `(tache, uuid_predecesseur, variable, delai)`.
+    """
+    paires = []
+    plafond = max(0, horizon - min(0, plancher))
+    for tache in taches:
+        if tache.delai_max is None or tache.uuid not in debuts:
+            continue
+        delai = int(tache.delai_max / granularite)   # « au plus » : arrondi bas
+        for predecesseur in tache.depends:
+            if predecesseur in fins:
+                fin_a = fins[predecesseur]
+            elif fins_constantes and predecesseur in fins_constantes:
+                fin_a = fins_constantes[predecesseur]
+            else:
+                continue
+            depassement = modele.NewIntVar(
+                0, plafond, "delai_{}_{}".format(predecesseur[:8], tache.uuid[:8]))
+            contrainte = modele.Add(
+                depassement >= debuts[tache.uuid] - fin_a - delai)
+            if presences is not None:
+                conditions = [presences[u] for u in (tache.uuid, predecesseur)
+                              if u in presences]
+                contrainte.OnlyEnforceIf(conditions)
+            paires.append((tache, predecesseur, depassement, delai))
+    return paires
+
+
+def _signaler_delais(solution, paires, debuts, fins, fins_constantes,
+                     par_uuid, granularite, presences=None):
+    """Nomme chaque paire dont le `delai_max` est depasse dans `solution`."""
+    for tache, predecesseur, _, delai in paires:
+        if presences is not None and any(
+                not solution.Value(presences[u])
+                for u in (tache.uuid, predecesseur) if u in presences):
+            continue
+        fin_a = (fins[predecesseur] if predecesseur in fins
+                 else fins_constantes[predecesseur])
+        ecart = solution.Value(debuts[tache.uuid]) - (
+            fin_a if isinstance(fin_a, int) else solution.Value(fin_a))
+        if ecart > delai:
+            amont = par_uuid.get(predecesseur)
+            _LOG.warning(
+                "delai max depasse : « %s » commence %s apres la fin de « %s » "
+                "(delai %s, depassement %s)",
+                tache.description, ecart * granularite,
+                amont.description if amont else predecesseur,
+                tache.delai_max, (ecart - delai) * granularite)
+
+
 def _consommer_capacite_figee(charge_figee, t0, granularite, contexte_nom,
                               fixe, fin, cache_contexte):
     """Impute le volume d'un bloc fige a la capacite de son/ses jour(s).
@@ -542,6 +633,10 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     # figee (indice >= 1). Absent de ce dict == bloc toujours present (bloc 0,
     # le FAIT, ou bloc ordinaire d'une tache non figee) -- voir plus bas.
     presences_fige_bloc = {}
+    # taches figees dont le FAIT a commence avant `maintenant` : leurs
+    # predecesseurs ne les contraignent plus (voir _figee_commencee).
+    figees_commencees = set()
+    plancher_global = tot
 
     for tache in taches:
         if tache.estimated is None:
@@ -794,8 +889,13 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         # Debut et fin de la TACHE : min des debuts, max des fins. On ne force
         # pas d'ordre entre les blocs d'une meme tache — ce serait une
         # restriction gratuite, et le reste du modele n'en a pas besoin.
-        d_t = modele.NewIntVar(tot, horizon, "dt_" + tache.uuid)
-        f_t = modele.NewIntVar(tot, horizon, "ft_" + tache.uuid)
+        plancher = tot
+        if fige0 and _figee_commencee(tache, fixe0, fin_fige, tot):
+            figees_commencees.add(tache.uuid)
+            plancher = fixe0
+            plancher_global = min(plancher_global, plancher)
+        d_t = modele.NewIntVar(plancher, horizon, "dt_" + tache.uuid)
+        f_t = modele.NewIntVar(plancher, horizon, "ft_" + tache.uuid)
         modele.AddMinEquality(d_t, starts_tache)
         modele.AddMaxEquality(f_t, ends_tache)
         debuts[tache.uuid] = d_t
@@ -833,7 +933,7 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
 
     # --- contrainte 6 : precedences -----------------------------------------
     for tache in taches:
-        if tache.uuid not in debuts:
+        if tache.uuid not in debuts or tache.uuid in figees_commencees:
             continue
         for predecesseur in tache.depends:
             if predecesseur in fins:
@@ -873,10 +973,15 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     # domine le retard : le solveur place la suite des qu'il le peut, meme au
     # prix d'un retard marginal sur cette meme tache (M5) -- puis on fige
     # l'optimum trouve et on maximise la somme des debuts.
+    # Contrainte 9 : un creneau de depassement de delai pese autant qu'un
+    # creneau de retard (design.md §5).
+    paires_delai = _depassements_delai(modele, taches, debuts, fins,
+                                       granularite, horizon, plancher_global)
+    depassements = [d for _, _, d, _ in paires_delai]
     presences_fige = list(presences_fige_bloc.values())
     s1 = None
-    if retards or presences_fige:
-        objectif1 = list(retards) + [
+    if retards or presences_fige or depassements:
+        objectif1 = list(retards) + depassements + [
             PENALITE_ABSENCE_FIGE * (1 - p) for p in presences_fige]
         modele.Minimize(sum(objectif1))
         s1 = _solveur(budget)
@@ -898,6 +1003,8 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         if retards:
             retard_optimal = s1.Value(sum(retards))
             modele.Add(sum(retards) <= retard_optimal)
+        if depassements:
+            modele.Add(sum(depassements) <= s1.Value(sum(depassements)))
         if presences_fige:
             absences = [1 - p for p in presences_fige]
             absences_optimal = s1.Value(sum(absences))
@@ -951,6 +1058,8 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
 
     retard_total = sum(retenu.Value(r) for r in retards)
     en_retard = tuple(sorted(u for u, r in ordre_retard if retenu.Value(r) > 0))
+    _signaler_delais(retenu, paires_delai, debuts, fins, None, par_uuid,
+                     granularite)
 
     return Plan(
         blocs=tuple(blocs),
@@ -1075,6 +1184,8 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     # figee non datee (indice >= 1, probleme 1 cote passe 2). Jamais la
     # presence, forcee a 1, du bloc 0 (le FAIT) -- voir le fork plus bas.
     presences_fige_bloc = {}
+    figees_commencees = set()   # voir _figee_commencee
+    plancher_global = min([tot] + [b.debut for b in plan.blocs])
 
     for tache in taches:
         if tache.estimated is None or tache.uuid in deja_planifiees:
@@ -1243,8 +1354,13 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
             debuts_ponderes.append((poids_urgence, depart))
 
         if starts_tache:
-            d_t = modele.NewIntVar(tot, horizon, "dt_o_" + tache.uuid[:8])
-            f_t = modele.NewIntVar(tot, horizon, "ft_o_" + tache.uuid[:8])
+            plancher = tot
+            if fige0 and _figee_commencee(tache, fixe0, fin_fige, tot):
+                figees_commencees.add(tache.uuid)
+                plancher = fixe0
+                plancher_global = min(plancher_global, plancher)
+            d_t = modele.NewIntVar(plancher, horizon, "dt_o_" + tache.uuid[:8])
+            f_t = modele.NewIntVar(plancher, horizon, "ft_o_" + tache.uuid[:8])
             modele.AddMinEquality(d_t, starts_tache)
             modele.AddMaxEquality(f_t, ends_tache)
             debuts[tache.uuid] = d_t
@@ -1267,13 +1383,17 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     for bloc in plan.blocs:
         fins_passe1[bloc.uuid] = max(fins_passe1.get(bloc.uuid, 0), bloc.fin)
     for tache in taches:
-        if tache.uuid not in debuts:
+        if tache.uuid not in debuts or tache.uuid in figees_commencees:
             continue
         for predecesseur in tache.depends:
             if predecesseur in fins:
                 modele.Add(debuts[tache.uuid] >= fins[predecesseur])
             elif predecesseur in fins_passe1:
                 modele.Add(debuts[tache.uuid] >= fins_passe1[predecesseur])
+
+    paires_delai = _depassements_delai(
+        modele, taches, debuts, fins, granularite, horizon, plancher_global,
+        fins_constantes=fins_passe1, presences=presences)
 
     if not presences:
         _LOG.info("passe 2 : aucune candidate soumise, le plan ressort intact")
@@ -1338,8 +1458,12 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     # « au plus tot » : c'est l'inverse exact de la passe 1, et c'est voulu.
     # Le travail sans echeance se fait des qu'il y a de la place ; le travail
     # date se fait contre son mur.
-    modele.Minimize(sum(poids * depart for poids, depart in debuts_ponderes)
-                    if debuts_ponderes else 0)
+    # Le depassement de delai (contrainte 9) n'entre qu'ici, jamais dans la
+    # maximisation de l'urgence : il deviendrait sinon plus rentable de ne pas
+    # placer une tache que de la placer en depassement (design.md §5).
+    termes2 = [poids * depart for poids, depart in debuts_ponderes]
+    termes2 += [PENALITE_DELAI * d for _, _, d, _ in paires_delai]
+    modele.Minimize(sum(termes2) if termes2 else 0)
     s2 = _solveur()
     etat = s2.Solve(modele)
     _signaler_arret_horloge(s2, etat, "passe 2 (au plus tot)")
@@ -1370,6 +1494,9 @@ def completer(plan, taches, contextes, t0, maintenant, horizon_fin, granularite,
     # Les deux nombres, toujours, meme quand tout va bien : c'est ce qui permet
     # de voir un plan ampute dans la sortie au lieu de le prendre pour complet.
     placees = sum(1 for uuid in presences if s2.Value(presences[uuid]))
+    _signaler_delais(s2, paires_delai, debuts, fins, fins_passe1,
+                     {t.uuid: t for t in taches}, granularite,
+                     presences=presences)
     journal = _LOG.info if placees == len(presences) else _LOG.warning
     journal("passe 2 : %d tache(s) placee(s) sur %d candidate(s)",
             placees, len(presences))

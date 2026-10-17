@@ -104,6 +104,12 @@ def charger_taches(filtre=("status:pending",), env=None, contextes_connus=()):
                 estimated = parse_duree(est)
             except ParseDureeErreur:
                 estimated = None  # signale par les pre-verifications, pas devine ici
+        delai_max = None
+        if brut.get("delaiMax"):
+            try:
+                delai_max = parse_duree(brut["delaiMax"])
+            except ParseDureeErreur:
+                delai_max = None
         tags = tuple(brut.get("tags", ()))
         taches.append(Tache(
             uuid=brut["uuid"],
@@ -117,5 +123,6 @@ def charger_taches(filtre=("status:pending",), env=None, contextes_connus=()):
             tags=tags,
             urgency=float(brut.get("urgency", 0.0)),
             contexte=_contexte_de(tags, set(contextes_connus)),
+            delai_max=delai_max,
         ))
     return taches

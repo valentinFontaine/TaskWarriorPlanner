@@ -123,6 +123,9 @@ class Tache:
     tags: tuple = ()
     urgency: float = 0.0
     contexte: str = None
+    #: UDA `delaiMax` : ecart maximal, en heures d'horloge, entre la fin de
+    #: chacune de ses `depends` et son debut (design.md §5, contrainte 9).
+    delai_max: timedelta = None
 
     @property
     def marqueurs(self):

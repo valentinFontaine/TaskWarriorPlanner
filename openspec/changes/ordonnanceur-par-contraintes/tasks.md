@@ -145,6 +145,17 @@ d'autre.
 
 ---
 
+## Lot D — Délai maximal entre deux tâches (17/10/2026)
+
+**But** : `design.md` §5, contrainte 9. UDA `delaiMax` (durée) sur la tâche qui attend,
+appliquée à chacune de ses `depends`, en heures d'horloge, en **souple**.
+
+**Vert quand** : `tests/test_delai_max.py` — le délai est tenu en passe 1 et en passe 2 là où
+le témoin sans délai le dépasse ; un délai intenable laisse le plan faisable et l'avertissement
+nomme la paire. Préalable côté prod : `uda.delaiMax.type=duration` dans le `taskrc`.
+
+---
+
 ## Lot Z — Remontées amont taskcheck (différé, décision utilisateur)
 
 Six défauts établis et reproductibles, listés en annexe de `design.md`.

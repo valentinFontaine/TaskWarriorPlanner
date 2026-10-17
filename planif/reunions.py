@@ -117,3 +117,23 @@ def reunions(debut, fin, source=None):
     _LOG.info("agenda : %d evenements lus, %d retenus comme occupants",
               len(brut), len(retenues))
     return tuple(retenues)
+
+
+def occupations_figees(taches, exclues=()):
+    """Les taches `+fixed` hors filtre, vues comme du temps OCCUPE.
+
+    Avec `--filtre`, une figee d'un autre projet n'est pas chargee dans le
+    plan, mais elle prend quand meme le temps de l'utilisateur
+    (tests/test_filtre_figees_hors_filtre.py). Elle occupe `[scheduled,
+    scheduled + estimated[`, d'un seul tenant, comme une reunion ; sans
+    `scheduled` ou sans duree, il n'y a rien a occuper.
+    """
+    occupations = []
+    for tache in taches:
+        if (tache.uuid in exclues or not tache.fige
+                or tache.scheduled is None or tache.estimated is None):
+            continue
+        occupations.append(Reunion(
+            titre="figee hors filtre : {}".format(tache.description),
+            debut=tache.scheduled, fin=tache.scheduled + tache.estimated))
+    return sorted(occupations, key=lambda r: r.debut)

@@ -33,8 +33,10 @@ discussion doit pouvoir implémenter un lot de `tasks.md` en ne lisant que ce fi
 | `depends[]` | Taskwarrior | précédence |
 | `tags[]` | Taskwarrior | contexte + marqueurs |
 | `urgency` | Taskwarrior | ordre du régime opportuniste |
+| `delai_max` | UDA `delaiMax` (durée) | écart maximal entre la fin de chacune de ses `depends` et son début (contrainte 9) |
 
-**Marqueurs, par tags — aucun UDA nouveau :**
+**Marqueurs, par tags — aucun UDA nouveau.** `delaiMax` est l'exception : ce n'est pas un
+marqueur mais une valeur (décision du 17/10/2026).
 
 | Tag | Effet |
 |---|---|
@@ -101,7 +103,12 @@ grille      = { lun = ["07:00-08:00", "18:40-19:30"], sam = ["07:00-12:00"], ...
 ### Réunion
 
 Intervalle fixe, issu d'iCal. Entre dans la contrainte de non-chevauchement au même titre
-qu'une tâche `+fige`. **Source à brancher** : le flux iCal existe déjà côté utilisateur
+qu'une tâche `+fige`.
+
+**Avec `--filtre`** (décision du 17/10/2026), chaque tâche `+fixed` en attente **hors** du
+filtre, qui porte un `scheduled` et un `estTime`, devient une réunion :
+`[scheduled, scheduled + estimated[`, d'un seul tenant. Elle n'est pas planifiée et ne sort
+pas dans le plan, mais son temps n'est plus proposé aux tâches filtrées. **Source à brancher** : le flux iCal existe déjà côté utilisateur
 (cf. `TWsched_task_to_caldav.py` du dépôt TaskWarriorPlanner, qui n'écrit que dans un sens).
 
 ### Projet
@@ -228,7 +235,21 @@ variable de présence.
    mais **absent** de la contrainte 4 — c'est toute la différence, et c'est une ligne
 6. **Précédence** : pour `i → j`, `start(premier bloc de j) ≥ end(dernier bloc de i)`
 7. **Échéance** : `end(dernier bloc de i) ≤ echeance_effective(i)`
-8. **Figées** : `start(I_i)` fixé à la valeur courante de `scheduled`
+8. **Figées** : `start(I_i)` fixé à la valeur courante de `scheduled`. **Même passé**
+   (décision du 17/10/2026) : une figée commencée avant `maintenant` et non terminée garde son
+   bloc à sa date — c'est un fait. Ses successeurs attendent sa fin ; un prédécesseur encore
+   en attente ne la contraint plus (finir avant un début déjà passé est impossible) et se
+   place à partir de `maintenant`. Si sa fin est passée aussi, un avertissement demande de la
+   marquer `done` ou de la redater.
+9. **Délai maximal**, en **souple** (décision du 17/10/2026) : pour `i → j` avec
+   `delai_max(j)` défini, `depassement_{i,j} = max(0, start(premier bloc de j) − end(dernier
+   bloc de i) − delai_max(j))`, en heures d'**horloge** (nuits et week-ends comptent).
+   Exemple : vernir au plus 2 h après la fin du ponçage → `delaiMax:2h` sur « vernir ». Le
+   dépassement est pénalisé, jamais interdit : un délai intenable ne rend pas le plan
+   infaisable. Chaque paire en dépassement est signalée par un avertissement qui nomme les
+   deux tâches et le dépassement. Au-delà de la frontière de l'horizon détaillé, la position
+   dans la journée n'a pas de sens : le dépassement y est calculé sur les mêmes indices, sans
+   autre garantie que « même journée ou la suivante ».
 
 ### Objectif — deux résolutions, pas deux objectifs
 
@@ -238,10 +259,12 @@ Les deux régimes ne se mélangent pas dans une seule optimisation : ils s'encha
 une tâche datée).
 
 ```
-minimiser   Σ retard_i            (lexicographiquement prioritaire)
+minimiser   Σ retard_i + Σ depassement_{i,j}   (lexicographiquement prioritaire)
 puis
 maximiser   Σ start_i             ← « au plus tard en sécurité »
 ```
+
+Un créneau de dépassement de délai pèse autant qu'un créneau de retard.
 
 Le résultat : chaque tâche datée est à sa date limite. **Sa date planifiée *est* sa marge.**
 La question « puis-je décaler cette commande ? » se lit dans le plan, sans seconde requête.
@@ -251,8 +274,13 @@ remplissent la capacité restante, par urgence décroissante, au plus tôt.
 
 ```
 maximiser   Σ urgence_i × planifiée_i
-départager  par start croissant
+départager  par Σ depassement_{i,j} (très lourd), puis start croissant
 ```
+
+Le dépassement de délai n'entre **pas** dans la première résolution de la passe 2 : sinon
+il deviendrait plus rentable de ne pas placer une tâche que de la placer en retard sur son
+délai. Il ne compte que pour deux tâches toutes deux placées (ou un prédécesseur de la
+passe 1, constant).
 
 > Pourquoi figer la passe 1 : pour que la marge annoncée soit **actionnable**. Une marge
 > obtenue en réorganisant tout le reste est vraie mais inutilisable — on ne la suivra pas, et

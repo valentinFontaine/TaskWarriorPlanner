@@ -380,11 +380,14 @@ CONTEXTE_M4 = Contexte(
     nom="ctxM4", contexte_tw="ctxM4",
     bloc_min=timedelta(hours=1), marge_jour=timedelta(0),
     grille={
-        # lundi detaille (fenetre 09:00-10:00, finit avant la frontiere) ;
-        # mardi et mercredi, meme fenetre, mais au-dela de la frontiere ->
+        # mardi et mercredi (fenetre 09:00-10:00) au-dela de la frontiere ->
         # agreges. Le reste de la semaine ferme : mercredi est la SEULE
-        # echappatoire pour O si mardi est plein.
-        0: (Creneau(9 * 60, 10 * 60),), 1: (Creneau(9 * 60, 10 * 60),),
+        # echappatoire pour O si mardi est plein. Lundi (avant la frontiere)
+        # est ferme lui aussi : depuis le 17/10/2026 une tache a limite
+        # lointaine peut utiliser la capacite detaillee
+        # (tests/test_capacite_avant_frontiere.py), et un lundi ouvert
+        # laisserait O s'y placer a temps sans rien dire du mardi.
+        0: _VIDE, 1: (Creneau(9 * 60, 10 * 60),),
         2: (Creneau(9 * 60, 10 * 60),), 3: _VIDE, 4: _VIDE, 5: _VIDE, 6: _VIDE,
     },
 )

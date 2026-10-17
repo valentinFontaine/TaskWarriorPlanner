@@ -28,11 +28,11 @@ Concretement, `resoudre` prend `horizon_detaille_fin` :
   regime AGREGE — un litteral par *journee*, aucune entree dans `AddNoOverlap`,
   et l'on ne garantit plus que le **volume du jour**.
 
-Une tache est **detaillee** si elle porte une limite qui tombe dans l'horizon
-detaille ; sinon elle est **agregee**. C'est la transcription de la parade
-annoncee par `proposal.md` : « ne modeliser finement que ce qui porte une
-echeance ». Une tache sans limite n'a aucune pression de date : elle n'a pas
-besoin de l'heure exacte en passe 1.
+Toute tache a les deux sortes de candidates : fenetres detaillees avant la
+frontiere, journees agregees apres. Le regime d'un bloc se lit sur son
+PLACEMENT, pas sur la tache. (Jusqu'au 17/10/2026, une tache dont la limite
+tombait au-dela de la frontiere n'avait que les journees agregees : la capacite
+proche lui etait interdite, voir tests/test_capacite_avant_frontiere.py.)
 
 **Ce que l'agregation lache, et il faut le savoir en lisant un plan :** au-dela
 de la frontiere, deux blocs d'une meme journee peuvent se chevaucher dans la
@@ -571,14 +571,6 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         fenetres, journees, capacites = cache[tache.contexte]
         bloc_min = _en_creneaux(ctx.bloc_min, granularite)
 
-        # --- le choix du regime, en UN seul endroit ------------------------
-        # Detaillee si elle porte une limite qui tombe dans l'horizon detaille.
-        # Sans agregation, tout est detaille et le modele est celui d'avant.
-        limite = (limites or {}).get(tache.uuid)
-        detaillee = (not agregation) or (
-            limite is not None
-            and indice_creneau(t0, limite, granularite) <= frontiere)
-
         tailles = decouper_en_blocs(taille, bloc_min, insecable=tache.insecable)
         blocs_modele[tache.uuid] = []
         starts_tache, ends_tache = [], []
@@ -595,28 +587,26 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         candidates_detaillees = [
             (jour, plage.debut, plage.fin, False) for jour, plage in fenetres]
         candidates_agregees = [(jour, debut, fin, True) for jour, debut, fin in journees]
-        if detaillee:
-            # Regime DETAILLE, avec une SOUPAPE : en plus de ses fenetres
-            # detaillees (ou le bloc tient tout entier dans une plage de la
-            # grille et entre dans la ressource unique), un bloc peut aussi
-            # tomber sur une journee AGREGEE au-dela de la frontiere, exactement
-            # comme un bloc d'une tache agregee. C'est ce qui rend l'echeance
-            # souple meme quand la capacite avant frontiere ne suffit pas
-            # (design.md §1) : sans cette soupape, `retenues` restait vide pour
-            # un bloc et le modele entier devenait INFEASIBLE (voir la note en
-            # tete de fichier de tests/test_echeance_souple_frontiere.py).
-            # L'objectif continue de preferer le regime detaille : minimiser le
-            # retard (premiere passe de l'objectif, plus bas) exclut d'office
-            # les debordements agreges qui depasseraient la limite quand la
-            # capacite detaillee suffit deja.
-            candidates = candidates_detaillees + candidates_agregees
-        else:
-            # Regime AGREGE : la journee entiere sert de fenetre, et le bloc
-            # n'entre PAS dans AddNoOverlap. `frontiere` dans la borne basse
-            # garantit qu'un bloc agrege ne vient jamais se superposer a un
-            # bloc detaille : les deux regimes restent dans des plages de temps
-            # disjointes.
-            candidates = candidates_agregees
+        # --- les candidates d'un bloc : UNE seule regle pour toutes les taches.
+        # Avant la frontiere, les fenetres detaillees (le bloc tient tout
+        # entier dans une plage de la grille et entre dans la ressource
+        # unique) ; apres elle, les journees agregees. Sans agregation,
+        # `journees` est vide et le modele est celui d'origine.
+        #
+        # Le regime se choisissait autrefois sur la limite : une tache dont la
+        # limite tombait au-dela de la frontiere n'avait QUE les journees
+        # agregees. Mesure du 17/10/2026 (projet maisonChristina, 46 taches
+        # heritant toutes de la limite du 02/11, frontiere au 31/10) : 82 h
+        # libres avant la frontiere -- dont une periode de vacances --
+        # interdites au projet, 72 h de travail entassees apres elle, retard
+        # 20370 ; avec cette regle, retard 0 (tests/test_capacite_avant_frontiere.py).
+        # design.md §1 n'agrege que la CAPACITE au-dela de l'horizon detaille.
+        #
+        # La SOUPAPE agregee d'une tache a limite proche vient de la meme
+        # regle : elle rend l'echeance souple quand la capacite avant
+        # frontiere ne suffit pas (tests/test_echeance_souple_frontiere.py).
+        # Minimiser le retard prefere le detaille des que la capacite suffit.
+        candidates = candidates_detaillees + candidates_agregees
 
         for indice, t_bloc in enumerate(tailles):
             nom = "{}#{}".format(tache.uuid[:8], indice)
@@ -884,6 +874,7 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     # prix d'un retard marginal sur cette meme tache (M5) -- puis on fige
     # l'optimum trouve et on maximise la somme des debuts.
     presences_fige = list(presences_fige_bloc.values())
+    s1 = None
     if retards or presences_fige:
         objectif1 = list(retards) + [
             PENALITE_ABSENCE_FIGE * (1 - p) for p in presences_fige]
@@ -894,6 +885,16 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
         if etat1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             return _sans_solution(s1, etat1, "passe 1 (retard + suite figee)",
                                   t0, granularite)
+        # La seconde resolution part de la solution de la premiere, en indice
+        # COMPLET : elle la satisfait (les deux bornes posees ci-dessous sont
+        # ses propres valeurs). Sans indice, elle repartait de zero sous une
+        # contrainte de plus et, sur les donnees reelles du 17/10/2026, ne
+        # retrouvait RIEN aux budgets 15 et 45 -- plan vide, alors qu'un plan
+        # complet etait en main (tests/test_passe1_deux_etapes.py).
+        modele.ClearHints()
+        for i in range(len(modele.Proto().variables)):
+            variable = modele.GetIntVarFromProtoIndex(i)
+            modele.AddHint(variable, s1.Value(variable))
         if retards:
             retard_optimal = s1.Value(sum(retards))
             modele.Add(sum(retards) <= retard_optimal)
@@ -914,37 +915,48 @@ def _resoudre_une_fois(taches, contextes, t0, maintenant, horizon_fin, granulari
     s2 = _solveur(budget)
     etat = s2.Solve(modele)
     _signaler_arret_horloge(s2, etat, "passe 1 (au plus tard)")
+    statut = s2.StatusName(etat)
+    retenu = s2
     if etat not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return _sans_solution(s2, etat, "passe 1 (au plus tard)", t0, granularite)
+        if s1 is None:
+            return _sans_solution(s2, etat, "passe 1 (au plus tard)", t0,
+                                  granularite)
+        # La premiere resolution a un plan : il respecte toutes les
+        # contraintes dures et tient le retard optimal trouve. Il n'est
+        # seulement pas pousse « au plus tard ». Mieux vaut ce plan-la qu'un
+        # plan vide (tests/test_passe1_deux_etapes.py, contrat 2).
+        _LOG.warning(
+            "passe 1 (au plus tard) : aucune solution dans le budget (%s) ; "
+            "le plan rendu est celui de l'etape « retard », place sans etre "
+            "repousse au plus tard.", statut)
+        statut, retenu = "FEASIBLE", s1
 
     blocs = []
     for uuid, liste in blocs_modele.items():
         externe = par_uuid[uuid].externe
         for indice, depart, arrivee, _ in liste:
             presence_bloc = presences_fige_bloc.get((uuid, indice))
-            if presence_bloc is not None and not s2.Value(presence_bloc):
+            if presence_bloc is not None and not retenu.Value(presence_bloc):
                 continue   # bloc de la suite d'une tache figee, absent ici
-            debut = s2.Value(depart)
-            # Le regime effectif se lit sur le PLACEMENT, pas sur le statut
-            # "detaillee"/"agregee" de la tache : une tache detaillee dont un
-            # bloc a du emprunter la soupape agregee (voir plus haut) rend un
-            # bloc agrege comme n'importe quel autre. `frontiere` separe les
+            debut = retenu.Value(depart)
+            # Le regime effectif se lit sur le PLACEMENT : chaque bloc a des
+            # candidates des deux regimes (voir plus haut). `frontiere` separe les
             # deux regimes dans le temps par construction : un bloc detaille
             # ne peut jamais commencer a ou apres elle.
             agrege = (not externe) and agregation and debut >= frontiere
             blocs.append(Bloc(uuid=uuid, indice=indice,
-                              debut=debut, fin=s2.Value(arrivee),
+                              debut=debut, fin=retenu.Value(arrivee),
                               externe=externe, agrege=agrege))
     blocs.sort(key=lambda b: (b.debut, b.uuid, b.indice))
 
-    retard_total = sum(s2.Value(r) for r in retards)
-    en_retard = tuple(sorted(u for u, r in ordre_retard if s2.Value(r) > 0))
+    retard_total = sum(retenu.Value(r) for r in retards)
+    en_retard = tuple(sorted(u for u, r in ordre_retard if retenu.Value(r) > 0))
 
     return Plan(
         blocs=tuple(blocs),
         t0=t0,
         granularite=granularite,
-        statut=s2.StatusName(etat),
+        statut=statut,
         retard_total=retard_total,
         en_retard=en_retard,
     )
